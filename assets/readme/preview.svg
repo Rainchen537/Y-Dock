@@ -1,0 +1,103 @@
+<svg width="1200" height="675" viewBox="0 0 1200 675" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1200" y2="675" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#071427"/>
+      <stop offset="0.52" stop-color="#0E2F57"/>
+      <stop offset="1" stop-color="#0A5D87"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(610 380) rotate(90) scale(420 720)">
+      <stop stop-color="#5BE7FF" stop-opacity="0.28"/>
+      <stop offset="1" stop-color="#5BE7FF" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="panel" x1="150" y1="90" x2="1050" y2="515" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#15233A" stop-opacity="0.92"/>
+      <stop offset="1" stop-color="#102132" stop-opacity="0.86"/>
+    </linearGradient>
+    <linearGradient id="card" x1="0" y1="0" x2="0" y2="1">
+      <stop stop-color="#26395C"/>
+      <stop offset="1" stop-color="#17253D"/>
+    </linearGradient>
+    <filter id="shadow" x="108" y="55" width="984" height="516" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="24" stdDeviation="28" flood-color="#000815" flood-opacity="0.45"/>
+    </filter>
+    <filter id="dockShadow" x="257" y="532" width="686" height="100" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="16" stdDeviation="18" flood-color="#00101E" flood-opacity="0.55"/>
+    </filter>
+  </defs>
+
+  <rect width="1200" height="675" fill="url(#bg)"/>
+  <rect width="1200" height="675" fill="url(#glow)"/>
+
+  <text x="600" y="70" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', sans-serif" font-size="34" font-weight="760" fill="#FFFFFF">Windows-style Dock Window Previews</text>
+  <text x="600" y="106" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif" font-size="17" fill="#BBD4F0">Hover an app in the Dock. Pick a window. Restore minimized windows. Close without switching.</text>
+
+  <g filter="url(#shadow)">
+    <rect x="150" y="138" width="900" height="360" rx="26" fill="url(#panel)" stroke="#73B7FF" stroke-opacity="0.35"/>
+
+    <g transform="translate(184 172)">
+      <rect width="260" height="280" rx="18" fill="url(#card)" stroke="#75B8FF" stroke-opacity="0.62"/>
+      <g transform="translate(18 18)">
+        <rect width="24" height="24" rx="6" fill="#1EC8FF"/>
+        <path d="M7 14.5C9.2 8.6 16.2 8.3 18.2 12.2C15.6 10.9 12.7 12 11 14.2C9.8 15.7 8.8 16.1 7 14.5Z" fill="#EAFBFF"/>
+        <text x="36" y="18" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif" font-size="15" font-weight="650" fill="#F7FBFF">GitHub - Build software...</text>
+      </g>
+      <rect x="18" y="58" width="224" height="156" rx="10" fill="#0A1020"/>
+      <rect x="31" y="72" width="198" height="22" rx="5" fill="#27355D"/>
+      <rect x="31" y="106" width="118" height="12" rx="6" fill="#6DDCFF" fill-opacity="0.85"/>
+      <rect x="31" y="128" width="176" height="10" rx="5" fill="#8FA8C8" fill-opacity="0.5"/>
+      <rect x="31" y="146" width="154" height="10" rx="5" fill="#8FA8C8" fill-opacity="0.35"/>
+      <rect x="31" y="174" width="84" height="22" rx="7" fill="#1FCE7C"/>
+      <text x="130" y="248" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif" font-size="13" fill="#BFD3EC">Click to focus</text>
+    </g>
+
+    <g transform="translate(470 172)">
+      <rect width="260" height="280" rx="18" fill="url(#card)" stroke="#75B8FF" stroke-opacity="0.30"/>
+      <g transform="translate(18 18)">
+        <rect width="24" height="24" rx="6" fill="#1EC8FF"/>
+        <path d="M7 14.5C9.2 8.6 16.2 8.3 18.2 12.2C15.6 10.9 12.7 12 11 14.2C9.8 15.7 8.8 16.1 7 14.5Z" fill="#EAFBFF"/>
+        <text x="36" y="18" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif" font-size="15" font-weight="650" fill="#F7FBFF">System Settings</text>
+        <rect x="200" y="-2" width="24" height="24" rx="8" fill="#FFFFFF" fill-opacity="0.13"/>
+        <path d="M206 4L218 16M218 4L206 16" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round"/>
+      </g>
+      <rect x="18" y="58" width="224" height="156" rx="10" fill="#161C27"/>
+      <rect x="35" y="75" width="56" height="122" rx="8" fill="#222A36"/>
+      <rect x="108" y="75" width="114" height="14" rx="7" fill="#D7E4F5" fill-opacity="0.82"/>
+      <rect x="108" y="105" width="96" height="10" rx="5" fill="#7E95B2" fill-opacity="0.52"/>
+      <rect x="108" y="127" width="116" height="10" rx="5" fill="#7E95B2" fill-opacity="0.38"/>
+      <rect x="108" y="153" width="80" height="24" rx="9" fill="#4B8DFF"/>
+      <text x="130" y="248" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif" font-size="13" fill="#BFD3EC">Hover to close</text>
+    </g>
+
+    <g transform="translate(756 172)">
+      <rect width="260" height="280" rx="18" fill="url(#card)" stroke="#75B8FF" stroke-opacity="0.30"/>
+      <g transform="translate(18 18)">
+        <rect width="24" height="24" rx="6" fill="#1EC8FF"/>
+        <path d="M7 14.5C9.2 8.6 16.2 8.3 18.2 12.2C15.6 10.9 12.7 12 11 14.2C9.8 15.7 8.8 16.1 7 14.5Z" fill="#EAFBFF"/>
+        <text x="36" y="18" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif" font-size="15" font-weight="650" fill="#F7FBFF">Minimized Window</text>
+      </g>
+      <rect x="18" y="58" width="224" height="156" rx="10" fill="#111827" stroke="#FFFFFF" stroke-opacity="0.08"/>
+      <circle cx="130" cy="122" r="28" fill="#FFFFFF" fill-opacity="0.08"/>
+      <path d="M116 122H144" stroke="#C7D8EE" stroke-width="5" stroke-linecap="round"/>
+      <text x="130" y="162" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif" font-size="15" font-weight="650" fill="#DCEBFF">Restores on click</text>
+      <text x="130" y="248" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif" font-size="13" fill="#BFD3EC">Minimized windows included</text>
+    </g>
+  </g>
+
+  <g filter="url(#dockShadow)">
+    <rect x="285" y="550" width="630" height="58" rx="22" fill="#07101C" fill-opacity="0.72" stroke="#FFFFFF" stroke-opacity="0.16"/>
+    <g transform="translate(330 560)">
+      <rect width="38" height="38" rx="11" fill="#3A86FF"/>
+      <rect x="58" width="38" height="38" rx="11" fill="#7D8597"/>
+      <rect x="116" width="38" height="38" rx="11" fill="#36C275"/>
+      <rect x="174" y="-10" width="58" height="58" rx="16" fill="#1EC8FF" stroke="#FFFFFF" stroke-opacity="0.45"/>
+      <path d="M190 25C195 10 213 9 218 19C211 16 204 19 200 25C197 29 194 30 190 25Z" fill="#EAFBFF"/>
+      <rect x="252" width="38" height="38" rx="11" fill="#FFBC42"/>
+      <rect x="310" width="38" height="38" rx="11" fill="#EF476F"/>
+      <rect x="368" width="38" height="38" rx="11" fill="#ADB5BD"/>
+      <rect x="426" width="38" height="38" rx="11" fill="#8338EC"/>
+      <rect x="484" width="38" height="38" rx="11" fill="#4CC9F0"/>
+    </g>
+  </g>
+
+  <path d="M600 498L574 550H626L600 498Z" fill="#0F2032" stroke="#73B7FF" stroke-opacity="0.35"/>
+</svg>
