@@ -44,6 +44,15 @@ final class WindowThumbnailProvider {
         return placeholderImage(title: window.title, reason: reason, size: targetSize)
     }
 
+    func focusImage(for window: WindowInfo, targetSize: NSSize) -> NSImage? {
+        if let capturedImage = captureWindowImage(for: window, targetSize: targetSize) {
+            cache(capturedImage, for: window)
+            return capturedImage
+        }
+
+        return cachedThumbnail(for: window, targetSize: targetSize)
+    }
+
     private func captureWindowImage(for window: WindowInfo, targetSize: NSSize) -> NSImage? {
         let options: CGWindowImageOption = [.boundsIgnoreFraming, .bestResolution]
         guard let cgImage = CGWindowListCreateImage(.null, .optionIncludingWindow, window.windowID, options) else {

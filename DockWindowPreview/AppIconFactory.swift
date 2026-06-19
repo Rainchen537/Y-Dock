@@ -2,6 +2,25 @@ import AppKit
 
 enum AppIconFactory {
     static func appIcon(size: CGFloat = 128) -> NSImage {
+        if let bundledIcon = bundledAppIcon(size: size) {
+            return bundledIcon
+        }
+
+        return fallbackAppIcon(size: size)
+    }
+
+    private static func bundledAppIcon(size: CGFloat) -> NSImage? {
+        let iconFromCatalog = NSImage(named: "AppIcon")
+        let iconFromResource = Bundle.main.url(forResource: "AppIcon", withExtension: "icns").flatMap(NSImage.init(contentsOf:))
+        guard let image = iconFromCatalog ?? iconFromResource else {
+            return nil
+        }
+
+        image.size = NSSize(width: size, height: size)
+        return image
+    }
+
+    private static func fallbackAppIcon(size: CGFloat) -> NSImage {
         let image = NSImage(size: NSSize(width: size, height: size))
         image.lockFocus()
 

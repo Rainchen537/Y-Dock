@@ -33,6 +33,12 @@ final class DockWindowPreviewApp: NSObject, NSApplicationDelegate {
         panel.onCloseWindow = { [weak self] window in
             self?.closeWindowFromPreview(window)
         }
+        panel.onMinimizeWindow = { [weak self] window in
+            self?.minimizeWindowFromPreview(window)
+        }
+        panel.onQuitApplication = { [weak self] window in
+            self?.quitApplicationFromPreview(window)
+        }
         return panel
     }()
 
@@ -189,6 +195,27 @@ final class DockWindowPreviewApp: NSObject, NSApplicationDelegate {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak self] in
             self?.refreshPreviewAfterClosingWindow(pid: window.ownerPID)
         }
+    }
+
+    private func minimizeWindowFromPreview(_ window: WindowInfo) {
+        guard windowActivator.minimize(window) else {
+            NSSound.beep()
+            return
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak self] in
+            self?.refreshPreviewAfterClosingWindow(pid: window.ownerPID)
+        }
+    }
+
+    private func quitApplicationFromPreview(_ window: WindowInfo) {
+        guard windowActivator.quitApplication(ownerPID: window.ownerPID) else {
+            NSSound.beep()
+            return
+        }
+
+        previewPanel.hide()
+        previewContext = nil
     }
 
     private func refreshPreviewAfterClosingWindow(pid: pid_t) {

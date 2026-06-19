@@ -79,6 +79,49 @@ final class WindowActivator {
         return true
     }
 
+    @discardableResult
+    func minimize(_ window: WindowInfo) -> Bool {
+        guard AXIsProcessTrusted() else {
+            DWLog("Accessibility is not trusted; cannot minimize a specific window")
+            return false
+        }
+
+        let appElement = AXUIElementCreateApplication(window.ownerPID)
+        guard let matchingWindow = matchingWindow(for: window, appElement: appElement) else {
+            DWLog("Could not match AX window to minimize '\(window.title)'")
+            return false
+        }
+
+        let error = AXUIElementSetAttributeValue(matchingWindow, kAXMinimizedAttribute as CFString, kCFBooleanTrue)
+        if error != .success {
+            DWLog("Setting AXMinimized failed for '\(window.title)': \(error.rawValue)")
+            return false
+        }
+
+        axWindowCache.removeValue(forKey: window.windowID)
+        return true
+    }
+
+    @discardableResult
+    func quitApplication(ownerPID: pid_t) -> Bool {
+        guard let app = NSRunningApplication(processIdentifier: ownerPID) else {
+            DWLog("Cannot find running application to quit for pid \(ownerPID)")
+            return false
+        }
+
+        if ownerPID == ProcessInfo.processInfo.processIdentifier {
+            NSApp.terminate(nil)
+            return true
+        }
+
+        if app.terminate() {
+            return true
+        }
+
+        DWLog("Graceful terminate failed for pid \(ownerPID); trying forceTerminate")
+        return app.forceTerminate()
+    }
+
     private func focus(_ matchingWindow: AXUIElement, appElement: AXUIElement, targetWindow: WindowInfo) {
         if targetWindow.isMinimized {
             let minimizeError = AXUIElementSetAttributeValue(matchingWindow, kAXMinimizedAttribute as CFString, kCFBooleanFalse)

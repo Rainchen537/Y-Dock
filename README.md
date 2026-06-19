@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/readme/logo-v0.3.1.png" width="128" height="128" alt="DockWindowPreview logo">
+  <img src="assets/readme/logo-v0.4.0.png" width="128" height="128" alt="DockWindowPreview logo">
 </p>
 
 <h1 align="center">DockWindowPreview</h1>
@@ -9,11 +9,11 @@
 </p>
 
 <p align="center">
-  鼠标悬停 Dock 图标，即刻查看该 App 的所有窗口。点击缩略图切换窗口，点击 <code>×</code> 关闭窗口，最小化窗口也能一键唤回。
+  鼠标悬停 Dock 图标，即刻查看该 App 的所有窗口。点击缩略图切换窗口，hover 卡片可快速关闭、最小化或退出所属 App。
 </p>
 
 <p align="center">
-  <a href="https://github.com/Rainchen537/DockWindowPreview/releases/tag/v0.3.1">
+  <a href="https://github.com/Rainchen537/DockWindowPreview/releases/tag/v0.4.0">
     <img alt="Release" src="https://img.shields.io/github/v/release/Rainchen537/DockWindowPreview?style=for-the-badge&color=1f8fff">
   </a>
   <img alt="macOS" src="https://img.shields.io/badge/macOS-13%2B-111827?style=for-the-badge&logo=apple">
@@ -23,7 +23,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Rainchen537/DockWindowPreview/releases/download/v0.3.1/DockWindowPreview-v0.3.1.dmg">
+  <a href="https://github.com/Rainchen537/DockWindowPreview/releases/download/v0.4.0/DockWindowPreview-v0.4.0.dmg">
     <img alt="Download DMG" src="https://img.shields.io/badge/Download-DMG-2563EB?style=for-the-badge&logo=github">
   </a>
 </p>
@@ -39,14 +39,15 @@
 | 🪟 Dock 悬浮预览 | 鼠标停在 Dock 中某个 App 图标上，弹出该 App 的窗口预览面板。 |
 | ⚡ 快速切换窗口 | 点击任意缩略图，直接激活 App 并聚焦对应窗口。 |
 | 💤 唤回最小化窗口 | 被最小化的窗口也会出现在预览里，点击后自动恢复并置前。 |
-| ❌ 预览中关闭窗口 | hover 某个窗口卡片，右上角淡入关闭按钮，点击即可关闭窗口。 |
+| 🎚 卡片窗口控制 | hover 某个窗口卡片，左上角显示退出 App、关闭窗口、最小化窗口三颗控制按钮。 |
+| 🎯 临时聚焦预览 | hover 卡片超过 `50ms` 后，用轻量覆盖层突出当前窗口快照，不改变真实桌面状态。 |
 | 🎛 设置面板 | 可调整悬停延迟、缩略图高度、标题显示、开机启动和调试日志。 |
 | 🔐 公开 API 实现 | 使用 AppKit、Accessibility、CoreGraphics，不依赖 macOS 私有 API。 |
 
 ## 📦 安装
 
 1. 下载最新版 DMG：  
-   [DockWindowPreview-v0.3.1.dmg](https://github.com/Rainchen537/DockWindowPreview/releases/download/v0.3.1/DockWindowPreview-v0.3.1.dmg)
+   [DockWindowPreview-v0.4.0.dmg](https://github.com/Rainchen537/DockWindowPreview/releases/download/v0.4.0/DockWindowPreview-v0.4.0.dmg)
 2. 打开 DMG。
 3. 将 `DockWindowPreview.app` 拖到 `Applications`。
 4. 启动 `DockWindowPreview`，按提示开启权限。
@@ -82,7 +83,7 @@ System Settings
 2. 将鼠标移动到 Dock 中正在运行的 App 图标上。
 3. 等待约 `100ms`，预览面板会自动弹出。
 4. 点击缩略图切换到对应窗口。
-5. hover 某张卡片，点击右上角 `×` 可关闭该窗口。
+5. hover 某张卡片，左上角可退出所属 App、关闭窗口或最小化窗口。
 
 ## ⚙️ 设置
 
@@ -131,6 +132,8 @@ macOS 没有公开的 Dock hover API，也没有公开 API 可以从 Dock 图标
 公开 Accessibility API 也不稳定暴露 `CGWindowID`。窗口激活使用标题、位置、尺寸等信息匹配 AXWindow，再执行 `AXRaise`、`AXMain` 和 `AXFocused`。
 
 最小化窗口无法通过公开 CoreGraphics API 截取实时缩略图，所以会显示“已最小化”占位图。点击后会通过 `AXMinimized = false` 尝试恢复窗口。
+
+hover 卡片时的“只看当前窗口”效果是公开 API 下的视觉模拟：App 会覆盖一层半透明面板并绘制当前窗口截图，不会真的隐藏其它窗口。
 
 全屏 Space、Stage Manager、多显示器、Dock 自动隐藏和 Dock 放大可能影响命中测试和面板定位。
 
