@@ -56,7 +56,10 @@ final class PreviewPanel: NSPanel {
             defer: false
         )
 
-        level = .floating
+        // The Dock tooltip is owned by Dock.app and cannot be disabled through
+        // public APIs. Keep the preview panel close to the Dock, but render it
+        // above system tooltip-style windows instead of artificially lifting it.
+        level = NSWindow.Level(rawValue: NSWindow.Level.screenSaver.rawValue - 1)
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle, .stationary]
         isOpaque = false
         hasShadow = true
@@ -310,15 +313,16 @@ final class PreviewPanel: NSPanel {
         var origin: NSPoint
         switch dockEdge {
         case .bottom:
-            // The Dock owns its tooltip window and public APIs cannot suppress it.
-            // Keep our preview lifted so the tooltip does not visually collide.
-            let y = visibleFrame.minY > screenFrame.minY + 20 ? visibleFrame.minY + 42 : screenFrame.minY + 144
+            let dockTopY = visibleFrame.minY > screenFrame.minY + 20 ? visibleFrame.minY : anchor.y + 28
+            let y = dockTopY + 6
             origin = NSPoint(x: anchor.x - size.width / 2, y: y)
         case .left:
-            let x = visibleFrame.minX > screenFrame.minX + 20 ? visibleFrame.minX + 30 : screenFrame.minX + 124
+            let dockRightX = visibleFrame.minX > screenFrame.minX + 20 ? visibleFrame.minX : anchor.x + 28
+            let x = dockRightX + 6
             origin = NSPoint(x: x, y: anchor.y - size.height / 2)
         case .right:
-            let x = visibleFrame.maxX < screenFrame.maxX - 20 ? visibleFrame.maxX - size.width - 30 : screenFrame.maxX - size.width - 124
+            let dockLeftX = visibleFrame.maxX < screenFrame.maxX - 20 ? visibleFrame.maxX : anchor.x - 28
+            let x = dockLeftX - size.width - 6
             origin = NSPoint(x: x, y: anchor.y - size.height / 2)
         case nil:
             origin = NSPoint(x: anchor.x - size.width / 2, y: anchor.y + 24)

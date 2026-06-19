@@ -13,7 +13,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Rainchen537/DockWindowPreview/releases/tag/v0.4.2">
+  <a href="https://github.com/Rainchen537/DockWindowPreview/releases/tag/v0.4.3">
     <img alt="Release" src="https://img.shields.io/github/v/release/Rainchen537/DockWindowPreview?style=for-the-badge&color=1f8fff">
   </a>
   <img alt="macOS" src="https://img.shields.io/badge/macOS-13%2B-111827?style=for-the-badge&logo=apple">
@@ -23,7 +23,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Rainchen537/DockWindowPreview/releases/download/v0.4.2/DockWindowPreview-v0.4.2.dmg">
+  <a href="https://github.com/Rainchen537/DockWindowPreview/releases/download/v0.4.3/DockWindowPreview-v0.4.3.dmg">
     <img alt="Download DMG" src="https://img.shields.io/badge/Download-DMG-2563EB?style=for-the-badge&logo=github">
   </a>
 </p>
@@ -47,7 +47,7 @@
 ## 📦 安装
 
 1. 下载最新版 DMG：  
-   [DockWindowPreview-v0.4.2.dmg](https://github.com/Rainchen537/DockWindowPreview/releases/download/v0.4.2/DockWindowPreview-v0.4.2.dmg)
+   [DockWindowPreview-v0.4.3.dmg](https://github.com/Rainchen537/DockWindowPreview/releases/download/v0.4.3/DockWindowPreview-v0.4.3.dmg)
 2. 打开 DMG。
 3. 将 `DockWindowPreview.app` 拖到 `Applications`。
 4. 启动 `DockWindowPreview`，按提示开启权限。

@@ -4,6 +4,9 @@ import Foundation
 final class SettingsPopoverController: NSObject, NSPopoverDelegate {
     private let viewController: SettingsViewController
     private let popover: NSPopover
+    private weak var anchorButton: NSStatusBarButton?
+    private var localEventMonitor: Any?
+    private var globalEventMonitor: Any?
 
     init(
         settings: AppSettings = .shared,
@@ -26,6 +29,10 @@ final class SettingsPopoverController: NSObject, NSPopoverDelegate {
         popover.delegate = self
     }
 
+    deinit {
+        removeEventMonitors()
+    }
+
     var isShown: Bool {
         popover.isShown
     }
@@ -39,8 +46,10 @@ final class SettingsPopoverController: NSObject, NSPopoverDelegate {
     }
 
     func show(relativeTo button: NSStatusBarButton, requestPermissions: Bool = false) {
+        anchorButton = button
         viewController.refreshForPresentation()
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        installEventMonitors()
 
         guard requestPermissions else { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
@@ -50,6 +59,59 @@ final class SettingsPopoverController: NSObject, NSPopoverDelegate {
 
     func close() {
         popover.performClose(nil)
+        removeEventMonitors()
+        anchorButton = nil
+    }
+
+    func popoverDidClose(_ notification: Notification) {
+        removeEventMonitors()
+        anchorButton = nil
+    }
+
+    private func installEventMonitors() {
+        removeEventMonitors()
+
+        let mask: NSEvent.EventTypeMask = [.leftMouseDown, .rightMouseDown, .otherMouseDown]
+        localEventMonitor = NSEvent.addLocalMonitorForEvents(matching: mask) { [weak self] event in
+            guard let self else { return event }
+
+            if self.popover.isShown, !self.shouldKeepPopoverOpen(for: event) {
+                self.close()
+            }
+
+            return event
+        }
+
+        globalEventMonitor = NSEvent.addGlobalMonitorForEvents(matching: mask) { [weak self] _ in
+            DispatchQueue.main.async {
+                self?.close()
+            }
+        }
+    }
+
+    private func removeEventMonitors() {
+        if let localEventMonitor {
+            NSEvent.removeMonitor(localEventMonitor)
+            self.localEventMonitor = nil
+        }
+
+        if let globalEventMonitor {
+            NSEvent.removeMonitor(globalEventMonitor)
+            self.globalEventMonitor = nil
+        }
+    }
+
+    private func shouldKeepPopoverOpen(for event: NSEvent) -> Bool {
+        if let popoverWindow = viewController.view.window, event.window === popoverWindow {
+            return true
+        }
+
+        guard let button = anchorButton, event.window === button.window else {
+            return false
+        }
+
+        let pointInButton = button.convert(event.locationInWindow, from: nil)
+        return button.bounds.contains(pointInButton)
     }
 }
 
