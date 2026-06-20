@@ -18,10 +18,17 @@ final class DockWindowPreviewApp: NSObject, NSApplicationDelegate {
         let dockEdge: DockEdge?
     }
 
+    private struct CachedPreviewWindows {
+        let windows: [WindowInfo]
+        let createdAt: TimeInterval
+    }
+
     private var statusItem: NSStatusItem?
     private var statusMenu: NSMenu?
     private var settingsPopoverController: SettingsPopoverController?
     private var previewContext: PreviewContext?
+    private var previewWindowCache: [pid_t: CachedPreviewWindows] = [:]
+    private let previewWindowCacheTTL: TimeInterval = 0.8
 
     private lazy var previewPanel: PreviewPanel = {
         let panel = PreviewPanel(thumbnailProvider: thumbnailProvider, settings: settings)
@@ -172,7 +179,7 @@ final class DockWindowPreviewApp: NSObject, NSApplicationDelegate {
             return
         }
 
-        let windows = windowCollector.windows(for: app)
+        let windows = previewWindows(for: app)
         guard !windows.isEmpty else {
             DWLog("No visible windows for \(app.localizedName ?? dockItem.title)")
             previewPanel.hide()
@@ -185,6 +192,7 @@ final class DockWindowPreviewApp: NSObject, NSApplicationDelegate {
     }
 
     private func closeWindowFromPreview(_ window: WindowInfo) {
+        invalidatePreviewCaches(ownerPID: window.ownerPID)
         guard windowActivator.close(window) else {
             NSSound.beep()
             return
@@ -198,6 +206,7 @@ final class DockWindowPreviewApp: NSObject, NSApplicationDelegate {
     }
 
     private func minimizeWindowFromPreview(_ window: WindowInfo) {
+        invalidatePreviewCaches(ownerPID: window.ownerPID)
         guard windowActivator.minimize(window) else {
             NSSound.beep()
             return
@@ -209,6 +218,7 @@ final class DockWindowPreviewApp: NSObject, NSApplicationDelegate {
     }
 
     private func quitApplicationFromPreview(_ window: WindowInfo) {
+        invalidatePreviewCaches(ownerPID: window.ownerPID)
         guard windowActivator.quitApplication(ownerPID: window.ownerPID) else {
             NSSound.beep()
             return
@@ -219,6 +229,7 @@ final class DockWindowPreviewApp: NSObject, NSApplicationDelegate {
     }
 
     private func refreshPreviewAfterClosingWindow(pid: pid_t) {
+        invalidatePreviewCaches(ownerPID: pid)
         guard
             let context = previewContext,
             context.appPID == pid,
@@ -237,6 +248,24 @@ final class DockWindowPreviewApp: NSObject, NSApplicationDelegate {
         }
 
         previewPanel.show(windows: windows, app: app, anchor: context.anchor, dockEdge: context.dockEdge)
+    }
+
+    private func previewWindows(for app: NSRunningApplication) -> [WindowInfo] {
+        let pid = app.processIdentifier
+        let now = Date.timeIntervalSinceReferenceDate
+
+        if let cached = previewWindowCache[pid], now - cached.createdAt <= previewWindowCacheTTL {
+            return cached.windows
+        }
+
+        let windows = windowCollector.windows(for: app)
+        previewWindowCache[pid] = CachedPreviewWindows(windows: windows, createdAt: now)
+        return windows
+    }
+
+    private func invalidatePreviewCaches(ownerPID: pid_t) {
+        previewWindowCache.removeValue(forKey: ownerPID)
+        thumbnailProvider.invalidatePreviewCache(ownerPID: ownerPID)
     }
 
     @objc private func openSettings() {

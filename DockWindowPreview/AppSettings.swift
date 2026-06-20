@@ -14,7 +14,10 @@ final class AppSettings {
         static let showWindowTitles = "showWindowTitles"
         static let launchAtLogin = "launchAtLogin"
         static let debugLoggingEnabled = "debugLoggingEnabled"
+        static let defaultsRevision = "defaultsRevision"
     }
+
+    private let currentDefaultsRevision = 1
 
     private let defaults: UserDefaults
 
@@ -62,11 +65,25 @@ final class AppSettings {
     private func registerDefaults() {
         defaults.register(defaults: [
             Keys.hoverDelay: 0.10,
-            Keys.thumbnailHeight: 150.0,
+            Keys.thumbnailHeight: 165.0,
             Keys.showWindowTitles: true,
             Keys.launchAtLogin: false,
-            Keys.debugLoggingEnabled: false
+            Keys.debugLoggingEnabled: false,
+            Keys.defaultsRevision: 0
         ])
+        migrateDefaultsIfNeeded()
+    }
+
+    private func migrateDefaultsIfNeeded() {
+        let revision = defaults.integer(forKey: Keys.defaultsRevision)
+        guard revision < currentDefaultsRevision else { return }
+
+        let currentHeight = defaults.double(forKey: Keys.thumbnailHeight)
+        if abs(currentHeight - 150.0) < 0.5 {
+            defaults.set(165.0, forKey: Keys.thumbnailHeight)
+        }
+
+        defaults.set(currentDefaultsRevision, forKey: Keys.defaultsRevision)
     }
 
     private func set(_ value: Any, forKey key: String) {

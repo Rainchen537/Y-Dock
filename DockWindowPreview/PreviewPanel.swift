@@ -7,17 +7,17 @@ private enum PreviewPanelLayout {
     static let rowSpacing: CGFloat = 5
     static let cardSpacing: CGFloat = 5
     static let cardInset: CGFloat = 4
-    static let titleImageSpacing: CGFloat = 3
-    static let titleRowHeight: CGFloat = 18
+    static let titleImageSpacing: CGFloat = 2
+    static let titleRowHeight: CGFloat = 24
     static let titleBandHeight: CGFloat = titleRowHeight + titleImageSpacing
-    static let titleFontSize: CGFloat = 11.7
-    static let titleIconSize: CGFloat = 17
-    static let controlButtonSize: CGFloat = 14.5
-    static let controlSpacing: CGFloat = 6
-    static let controlLeading: CGFloat = 7
-    static let controlTop: CGFloat = 7
-    static let controlMaskWidth: CGFloat = 78
-    static let controlMaskHeight: CGFloat = 27
+    static let titleFontSize: CGFloat = 13.4
+    static let titleIconSize: CGFloat = 20
+    static let controlButtonSize: CGFloat = 16.5
+    static let controlSpacing: CGFloat = 6.5
+    static let controlLeading: CGFloat = 8
+    static var controlTop: CGFloat { cardInset + (titleRowHeight - controlButtonSize) / 2 }
+    static let controlMaskWidth: CGFloat = 90
+    static var controlMaskHeight: CGFloat { cardInset + titleRowHeight }
     static let dockBridgeInset: CGFloat = 18
     static let focusPreviewDelay: TimeInterval = 0.05
 }

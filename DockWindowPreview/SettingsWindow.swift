@@ -124,8 +124,8 @@ private final class SettingsViewController: NSViewController {
 
     private let hoverDelaySlider = NSSlider(value: 0.10, minValue: 0.05, maxValue: 0.8, target: nil, action: nil)
     private let hoverDelayValuePill = SettingsPill(text: "100 ms", tone: .accent)
-    private let thumbnailSlider = NSSlider(value: 150, minValue: 100, maxValue: 260, target: nil, action: nil)
-    private let thumbnailValuePill = SettingsPill(text: "150 px", tone: .neutral)
+    private let thumbnailSlider = NSSlider(value: 165, minValue: 100, maxValue: 260, target: nil, action: nil)
+    private let thumbnailValuePill = SettingsPill(text: "165 px", tone: .neutral)
     private let launchAtLoginStatusPill = SettingsPill(text: "未开启", tone: .neutral)
     private let updateStatusPill = SettingsPill(text: "", tone: .neutral)
     private let accessibilityStatusPill = SettingsPill(text: "检测中", tone: .neutral)

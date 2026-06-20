@@ -15,33 +15,68 @@ final class WindowThumbnailProvider {
         let normalizedTitle: String
     }
 
+    private struct PreviewThumbnailKey: Hashable {
+        let windowID: CGWindowID
+        let ownerPID: pid_t
+        let normalizedTitle: String
+        let roundedWindowWidth: Int
+        let roundedWindowHeight: Int
+        let targetWidth: Int
+        let targetHeight: Int
+        let isMinimized: Bool
+    }
+
+    private struct CachedPreviewThumbnail {
+        let image: NSImage
+        let createdAt: TimeInterval
+    }
+
     private var snapshotCache: [WindowSnapshotKey: NSImage] = [:]
     private var titleFallbackCache: [WindowTitleKey: NSImage] = [:]
+    private var previewThumbnailCache: [PreviewThumbnailKey: CachedPreviewThumbnail] = [:]
     private var cacheOrder: [WindowSnapshotKey] = []
+    private var previewCacheOrder: [PreviewThumbnailKey] = []
     private let maximumCachedSnapshots = 80
+    private let maximumCachedPreviewThumbnails = 120
+    private let previewThumbnailCacheTTL: TimeInterval = 2.0
 
     func thumbnail(for window: WindowInfo, targetSize: NSSize) -> NSImage {
+        let previewKey = previewThumbnailKey(for: window, targetSize: targetSize)
+        if let cachedImage = cachedPreviewThumbnail(for: previewKey) {
+            return cachedImage
+        }
+
+        let image: NSImage
         if window.isMinimized {
             if let capturedImage = captureWindowImage(for: window, targetSize: targetSize) {
                 cache(capturedImage, for: window)
-                return minimizedOverlayImage(base: capturedImage, title: window.title, size: targetSize)
+                image = minimizedOverlayImage(base: capturedImage, title: window.title, size: targetSize)
+                cachePreviewThumbnail(image, for: previewKey)
+                return image
             }
 
             if let cachedImage = cachedThumbnail(for: window, targetSize: targetSize) {
-                return minimizedOverlayImage(base: cachedImage, title: window.title, size: targetSize)
+                image = minimizedOverlayImage(base: cachedImage, title: window.title, size: targetSize)
+                cachePreviewThumbnail(image, for: previewKey)
+                return image
             }
 
-            return placeholderImage(title: window.title, reason: "已最小化", size: targetSize)
+            image = placeholderImage(title: window.title, reason: "已最小化", size: targetSize)
+            cachePreviewThumbnail(image, for: previewKey)
+            return image
         }
 
         if let capturedImage = captureWindowImage(for: window, targetSize: targetSize) {
             cache(capturedImage, for: window)
+            cachePreviewThumbnail(capturedImage, for: previewKey)
             return capturedImage
         }
 
         let reason = CGPreflightScreenCaptureAccess() ? "无法截图" : "需要屏幕录制权限"
         DWLog("Failed to capture thumbnail for window \(window.windowID), reason: \(reason)")
-        return placeholderImage(title: window.title, reason: reason, size: targetSize)
+        image = placeholderImage(title: window.title, reason: reason, size: targetSize)
+        cachePreviewThumbnail(image, for: previewKey)
+        return image
     }
 
     func focusImage(for window: WindowInfo, targetSize: NSSize) -> NSImage? {
@@ -51,6 +86,11 @@ final class WindowThumbnailProvider {
         }
 
         return cachedThumbnail(for: window, targetSize: targetSize)
+    }
+
+    func invalidatePreviewCache(ownerPID: pid_t) {
+        previewThumbnailCache = previewThumbnailCache.filter { $0.key.ownerPID != ownerPID }
+        previewCacheOrder.removeAll { $0.ownerPID == ownerPID }
     }
 
     private func captureWindowImage(for window: WindowInfo, targetSize: NSSize) -> NSImage? {
@@ -97,12 +137,53 @@ final class WindowThumbnailProvider {
         }
     }
 
+    private func cachedPreviewThumbnail(for key: PreviewThumbnailKey) -> NSImage? {
+        guard let cached = previewThumbnailCache[key] else { return nil }
+
+        let age = Date.timeIntervalSinceReferenceDate - cached.createdAt
+        guard age <= previewThumbnailCacheTTL else {
+            previewThumbnailCache.removeValue(forKey: key)
+            previewCacheOrder.removeAll { $0 == key }
+            return nil
+        }
+
+        return cached.image
+    }
+
+    private func cachePreviewThumbnail(_ image: NSImage, for key: PreviewThumbnailKey) {
+        previewThumbnailCache[key] = CachedPreviewThumbnail(
+            image: image,
+            createdAt: Date.timeIntervalSinceReferenceDate
+        )
+
+        previewCacheOrder.removeAll { $0 == key }
+        previewCacheOrder.append(key)
+
+        while previewCacheOrder.count > maximumCachedPreviewThumbnails {
+            let removedKey = previewCacheOrder.removeFirst()
+            previewThumbnailCache.removeValue(forKey: removedKey)
+        }
+    }
+
     private func snapshotKey(for window: WindowInfo) -> WindowSnapshotKey {
         WindowSnapshotKey(
             ownerPID: window.ownerPID,
             normalizedTitle: normalize(window.title),
             roundedWidth: roundedDimension(window.bounds.width),
             roundedHeight: roundedDimension(window.bounds.height)
+        )
+    }
+
+    private func previewThumbnailKey(for window: WindowInfo, targetSize: NSSize) -> PreviewThumbnailKey {
+        PreviewThumbnailKey(
+            windowID: window.windowID,
+            ownerPID: window.ownerPID,
+            normalizedTitle: normalize(window.title),
+            roundedWindowWidth: roundedDimension(window.bounds.width),
+            roundedWindowHeight: roundedDimension(window.bounds.height),
+            targetWidth: Int(max(1, targetSize.width).rounded()),
+            targetHeight: Int(max(1, targetSize.height).rounded()),
+            isMinimized: window.isMinimized
         )
     }
 

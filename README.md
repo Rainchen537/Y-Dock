@@ -13,7 +13,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Rainchen537/DockWindowPreview/releases/tag/v0.4.3">
+  <a href="https://github.com/Rainchen537/DockWindowPreview/releases/tag/v0.4.4">
     <img alt="Release" src="https://img.shields.io/github/v/release/Rainchen537/DockWindowPreview?style=for-the-badge&color=1f8fff">
   </a>
   <img alt="macOS" src="https://img.shields.io/badge/macOS-13%2B-111827?style=for-the-badge&logo=apple">
@@ -23,7 +23,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Rainchen537/DockWindowPreview/releases/download/v0.4.3/DockWindowPreview-v0.4.3.dmg">
+  <a href="https://github.com/Rainchen537/DockWindowPreview/releases/download/v0.4.4/DockWindowPreview-v0.4.4.dmg">
     <img alt="Download DMG" src="https://img.shields.io/badge/Download-DMG-2563EB?style=for-the-badge&logo=github">
   </a>
 </p>
@@ -47,7 +47,7 @@
 ## 📦 安装
 
 1. 下载最新版 DMG：  
-   [DockWindowPreview-v0.4.3.dmg](https://github.com/Rainchen537/DockWindowPreview/releases/download/v0.4.3/DockWindowPreview-v0.4.3.dmg)
+   [DockWindowPreview-v0.4.4.dmg](https://github.com/Rainchen537/DockWindowPreview/releases/download/v0.4.4/DockWindowPreview-v0.4.4.dmg)
 2. 打开 DMG。
 3. 将 `DockWindowPreview.app` 拖到 `Applications`。
 4. 启动 `DockWindowPreview`，按提示开启权限。
@@ -92,7 +92,7 @@ System Settings
 可调整：
 
 - `悬停延迟`：默认 `100ms`。
-- `缩略图高度`：窗口宽度会按原始比例自适应。
+- `缩略图高度`：默认 `165px`，窗口宽度会按原始比例自适应。
 - `显示窗口标题`：控制预览卡片顶部标题栏。
 - `开机启动`：使用 macOS 官方 `SMAppService.mainApp`。
 - `调试日志`：输出 `[DockWindowPreview]` 前缀日志。
