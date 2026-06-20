@@ -3,6 +3,7 @@ import Foundation
 
 final class MouseTracker {
     var onHoverResolved: ((DockItem, NSPoint) -> Void)?
+    var onDockHoverCandidateChanged: (() -> Void)?
     var onMouseLeftDockAndPreview: (() -> Void)?
     var isPointInsidePreviewPanel: ((NSPoint) -> Bool)?
 
@@ -59,7 +60,10 @@ final class MouseTracker {
             return
         }
 
-        if isPointInsidePreviewPanel?(point) == true {
+        let region = dockInspector.dockRegion(containing: point)
+        let isInsideDockFrame = region?.frame.contains(point) == true
+
+        if !isInsideDockFrame, isPointInsidePreviewPanel?(point) == true {
             cancelPendingLeave()
             return
         }
@@ -68,7 +72,7 @@ final class MouseTracker {
         guard now - lastHandledAt >= throttleInterval else { return }
         lastHandledAt = now
 
-        guard let region = dockInspector.dockRegion(containing: point), region.frame.insetBy(dx: -6, dy: -6).contains(point) else {
+        guard let region, region.frame.insetBy(dx: -6, dy: -6).contains(point) else {
             currentHoverIdentity = nil
             cancelPendingHover()
             scheduleLeave()
@@ -84,7 +88,11 @@ final class MouseTracker {
 
         cancelPendingLeave()
         guard currentHoverIdentity != item.identity else { return }
+        let hadPreviousHoverIdentity = currentHoverIdentity != nil
         currentHoverIdentity = item.identity
+        if hadPreviousHoverIdentity {
+            onDockHoverCandidateChanged?()
+        }
         scheduleHover(for: item, at: point)
     }
 

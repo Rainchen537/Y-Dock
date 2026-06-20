@@ -57,6 +57,10 @@ final class DockWindowPreviewApp: NSObject, NSApplicationDelegate {
         tracker.onHoverResolved = { [weak self] item, point in
             self?.showPreview(for: item, anchor: point)
         }
+        tracker.onDockHoverCandidateChanged = { [weak self] in
+            self?.previewPanel.hide()
+            self?.previewContext = nil
+        }
         tracker.onMouseLeftDockAndPreview = { [weak self] in
             self?.previewPanel.hide()
             self?.previewContext = nil
