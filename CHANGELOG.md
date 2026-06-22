@@ -2,6 +2,14 @@
 
 All notable Y-Dock release changes are tracked here.
 
+## v1.0.0 - 2026-06-22
+
+- Added a Windows-style `Option+Tab` window switcher built with public Carbon hotkey APIs.
+- Shows a centered AppKit thumbnail switcher panel, cycles while `Option` is held, and activates the selected window when `Option` is released.
+- Reuses the existing CoreGraphics window collector, thumbnail provider, minimized-window fallback, and Accessibility-based window activation.
+- Added the shortcut state to the menu bar settings popover.
+- Marked the app as the first complete `1.0.0` release.
+
 ## v0.5.0 - 2026-06-22
 
 - Renamed the user-facing app from DockWindowPreview to Y-Dock.

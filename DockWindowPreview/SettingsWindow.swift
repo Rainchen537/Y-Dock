@@ -130,6 +130,7 @@ private final class SettingsViewController: NSViewController {
     private let updateStatusPill = SettingsPill(text: "", tone: .neutral)
     private let accessibilityStatusPill = SettingsPill(text: "检测中", tone: .neutral)
     private let screenCaptureStatusPill = SettingsPill(text: "检测中", tone: .neutral)
+    private let optionTabShortcutPill = SettingsPill(text: "⌥ Tab", tone: .accent)
 
     private lazy var showTitleSwitch = makeSwitch(action: #selector(showTitleChanged(_:)))
     private lazy var launchAtLoginSwitch = makeSwitch(action: #selector(launchAtLoginChanged(_:)))
@@ -266,6 +267,8 @@ private final class SettingsViewController: NSViewController {
             switchControl: launchAtLoginSwitch,
             actionButton: openLoginItemsButton
         ))
+        card.stack.addArrangedSubview(SettingsUI.divider())
+        card.stack.addArrangedSubview(statusRow(title: "窗口切换", statusPill: nil, trailingView: optionTabShortcutPill))
         return card
     }
 

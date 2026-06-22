@@ -76,6 +76,13 @@ final class DockWindowPreviewApp: NSObject, NSApplicationDelegate {
         return tracker
     }()
 
+    private lazy var optionTabSwitcher = OptionTabSwitcher(
+        windowCollector: windowCollector,
+        thumbnailProvider: thumbnailProvider,
+        windowActivator: windowActivator,
+        settings: settings
+    )
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         Self.retainedDelegate = self
         NSApp.setActivationPolicy(.accessory)
@@ -88,12 +95,14 @@ final class DockWindowPreviewApp: NSObject, NSApplicationDelegate {
             permissionsManager.showInitialPermissionGuidanceIfNeeded()
         }
         mouseTracker.start()
+        optionTabSwitcher.start()
         scheduleStartupUpdateCheck()
         DWLog("\(AppBranding.displayName) launched")
     }
 
     func applicationWillTerminate(_ notification: Notification) {
         cancelPreviewPrewarm()
+        optionTabSwitcher.stop()
         mouseTracker.stop()
     }
 

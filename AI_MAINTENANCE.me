@@ -10,6 +10,7 @@ Core behavior:
 - Runs as a menu bar/background app only. It should not appear in Dock or Cmd-Tab.
 - Watches global mouse movement and performs best-effort Dock icon hit testing through Accessibility.
 - Shows an AppKit `NSPanel` preview near Dock icons with one card per window.
+- Registers `Option+Tab` with public Carbon hotkey APIs for a Windows-style window switcher.
 - Uses CoreGraphics window lists and snapshots for thumbnails.
 - Uses Accessibility to raise, focus, minimize, close, restore minimized windows, or terminate the owning app.
 - Uses public APIs only. macOS does not expose a public Dock hover/window-preview API.
@@ -24,6 +25,7 @@ Core behavior:
 - `DockWindowPreview/WindowThumbnailProvider.swift`: thumbnail capture, cache, and fallback thumbnails.
 - `DockWindowPreview/PreviewPanel.swift`: AppKit preview panel UI and card interactions.
 - `DockWindowPreview/FocusOverlayPanel.swift`: lightweight visual focus overlay for hovered thumbnails.
+- `DockWindowPreview/OptionTabSwitcher.swift`: global `Option+Tab` hotkey, centered switcher panel, and selection lifecycle.
 - `DockWindowPreview/WindowActivator.swift`: AX-based focus, raise, close, minimize, restore.
 - `DockWindowPreview/SettingsWindow.swift`: menu bar popover settings UI.
 - `DockWindowPreview/SettingsComponents.swift`: reusable settings components.
@@ -106,6 +108,8 @@ git push origin master
 git push origin v0.0.0
 gh release create v0.0.0 "dist/Y-Dock-v0.0.0.dmg" --title "Y-Dock v0.0.0" --notes-file build/release-notes-v0.0.0.txt
 ```
+
+If `gh` is unavailable, use the GitHub Releases REST API with the existing repo remote (`Rainchen537/DockWindowPreview`) and upload the same DMG asset. Do not skip updating `CHANGELOG.md`; README links and release notes should match the tag.
 
 ## Local Install Check
 

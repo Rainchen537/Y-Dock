@@ -111,6 +111,104 @@ final class WindowCollector {
         return results
     }
 
+    func switchableWindows() -> [WindowInfo] {
+        let currentPID = ProcessInfo.processInfo.processIdentifier
+        let switchableApps = NSWorkspace.shared.runningApplications.filter { app in
+            !app.isTerminated
+                && app.processIdentifier != currentPID
+                && app.activationPolicy == .regular
+        }
+        let appsByPID = Dictionary(uniqueKeysWithValues: switchableApps.map { ($0.processIdentifier, $0) })
+
+        let options: CGWindowListOption = [.excludeDesktopElements]
+        let rawWindows = CGWindowListCopyWindowInfo(options, kCGNullWindowID) as? [[String: Any]]
+        if rawWindows == nil {
+            DWLog("CGWindowListCopyWindowInfo returned no switcher window list")
+        }
+
+        var seenWindowIDs = Set<CGWindowID>()
+        var seenPIDs = Set<pid_t>()
+        var pidOrder: [pid_t] = []
+        var results: [WindowInfo] = []
+        var offscreenCandidatesByPID: [pid_t: [CGWindowCandidate]] = [:]
+
+        func rememberPID(_ pid: pid_t) {
+            guard seenPIDs.insert(pid).inserted else { return }
+            pidOrder.append(pid)
+        }
+
+        for dictionary in rawWindows ?? [] {
+            guard
+                let ownerPID = dictionary[kCGWindowOwnerPID as String] as? pid_t,
+                let app = appsByPID[ownerPID],
+                let windowNumber = dictionary[kCGWindowNumber as String] as? CGWindowID,
+                !seenWindowIDs.contains(windowNumber),
+                let layer = dictionary[kCGWindowLayer as String] as? Int,
+                layer == 0
+            else {
+                continue
+            }
+
+            let isOnscreen = (dictionary[kCGWindowIsOnscreen as String] as? Bool) ?? false
+            let alpha = (dictionary[kCGWindowAlpha as String] as? Double) ?? 1
+            if isOnscreen, alpha <= 0.01 { continue }
+
+            guard
+                let boundsDictionary = dictionary[kCGWindowBounds as String] as? NSDictionary,
+                let bounds = CGRect(dictionaryRepresentation: boundsDictionary as CFDictionary),
+                bounds.width >= 40,
+                bounds.height >= 40
+            else {
+                continue
+            }
+
+            let title = (dictionary[kCGWindowName as String] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let ownerName = (dictionary[kCGWindowOwnerName as String] as? String) ?? app.localizedName ?? "Unknown App"
+            let displayTitle = title?.isEmpty == false ? title! : ownerName
+
+            guard isLikelyUserWindow(title: title, ownerName: ownerName, bounds: bounds) else {
+                continue
+            }
+
+            if !isOnscreen {
+                offscreenCandidatesByPID[ownerPID, default: []].append(CGWindowCandidate(
+                    windowID: windowNumber,
+                    title: displayTitle,
+                    bounds: bounds,
+                    ownerName: ownerName
+                ))
+                continue
+            }
+
+            seenWindowIDs.insert(windowNumber)
+            rememberPID(ownerPID)
+            results.append(WindowInfo(
+                windowID: windowNumber,
+                title: displayTitle,
+                bounds: bounds,
+                ownerPID: ownerPID,
+                ownerName: ownerName,
+                isMinimized: false
+            ))
+        }
+
+        let remainingPIDs = switchableApps
+            .map(\.processIdentifier)
+            .filter { !seenPIDs.contains($0) }
+
+        for pid in pidOrder + remainingPIDs {
+            guard let app = appsByPID[pid] else { continue }
+            appendMinimizedAXWindows(
+                to: &results,
+                processIdentifier: pid,
+                fallbackOwnerName: app.localizedName ?? "Unknown App",
+                offscreenCandidates: offscreenCandidatesByPID[pid] ?? []
+            )
+        }
+
+        return results
+    }
+
     private func appendMinimizedAXWindows(
         to results: inout [WindowInfo],
         processIdentifier: pid_t,

@@ -9,11 +9,11 @@
 </p>
 
 <p align="center">
-  鼠标悬停 Dock 图标，即刻查看该 App 的所有窗口。点击缩略图切换窗口，hover 卡片可快速关闭、最小化或退出所属 App。
+  鼠标悬停 Dock 图标，即刻查看该 App 的所有窗口；也可以按住 Option+Tab，用 Windows Alt+Tab 的方式快速切换窗口。
 </p>
 
 <p align="center">
-  <a href="https://github.com/Rainchen537/DockWindowPreview/releases/tag/v0.5.0">
+  <a href="https://github.com/Rainchen537/DockWindowPreview/releases/tag/v1.0.0">
     <img alt="Release" src="https://img.shields.io/github/v/release/Rainchen537/DockWindowPreview?style=for-the-badge&color=1f8fff">
   </a>
   <img alt="macOS" src="https://img.shields.io/badge/macOS-13%2B-111827?style=for-the-badge&logo=apple">
@@ -23,7 +23,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Rainchen537/DockWindowPreview/releases/download/v0.5.0/Y-Dock-v0.5.0.dmg">
+  <a href="https://github.com/Rainchen537/DockWindowPreview/releases/download/v1.0.0/Y-Dock-v1.0.0.dmg">
     <img alt="Download DMG" src="https://img.shields.io/badge/Download-DMG-2563EB?style=for-the-badge&logo=github">
   </a>
 </p>
@@ -38,6 +38,7 @@
 | --- | --- |
 | 🪟 Dock 悬浮预览 | 鼠标停在 Dock 中某个 App 图标上，弹出该 App 的窗口预览面板。 |
 | ⚡ 快速切换窗口 | 点击任意缩略图，直接激活 App 并聚焦对应窗口。 |
+| ⌥ Option+Tab 切换 | 按住 `Option` 后按 `Tab` 呼出窗口切换器，继续按 `Tab` 循环，松开 `Option` 激活选中窗口。 |
 | 💤 唤回最小化窗口 | 被最小化的窗口也会出现在预览里，点击后自动恢复并置前。 |
 | 🎚 卡片窗口控制 | hover 某个窗口卡片，左上角显示退出 App、关闭窗口、最小化窗口三颗控制按钮。 |
 | 🎯 临时聚焦预览 | hover 卡片超过 `50ms` 后，用轻量覆盖层突出当前窗口快照，不改变真实桌面状态。 |
@@ -47,7 +48,7 @@
 ## 📦 安装
 
 1. 下载最新版 DMG：  
-   [Y-Dock-v0.5.0.dmg](https://github.com/Rainchen537/DockWindowPreview/releases/download/v0.5.0/Y-Dock-v0.5.0.dmg)
+   [Y-Dock-v1.0.0.dmg](https://github.com/Rainchen537/DockWindowPreview/releases/download/v1.0.0/Y-Dock-v1.0.0.dmg)
 2. 打开 DMG。
 3. 将 `Y-Dock.app` 拖到 `Applications`。
 4. 启动 `Y-Dock`，按提示开启权限。
@@ -84,6 +85,7 @@ System Settings
 3. 等待约 `100ms`，预览面板会自动弹出。
 4. 点击缩略图切换到对应窗口。
 5. hover 某张卡片，左上角可退出所属 App、关闭窗口或最小化窗口。
+6. 也可以按住 `Option` 并按 `Tab` 打开窗口切换器；继续按 `Tab` 循环，松开 `Option` 后切到当前选中的窗口。
 
 ## ⚙️ 设置
 
@@ -95,6 +97,7 @@ System Settings
 - `缩略图高度`：默认 `165px`，窗口宽度会按原始比例自适应。
 - `显示窗口标题`：控制预览卡片顶部标题栏。
 - `开机启动`：使用 macOS 官方 `SMAppService.mainApp`。
+- `窗口切换`：显示全局快捷键 `Option+Tab`。
 - `调试日志`：输出 `[Y-Dock]` 前缀日志。
 
 ## 🛠 技术栈
@@ -105,6 +108,7 @@ AppKit
 Accessibility API / AXUIElement
 CoreGraphics / CGWindowListCopyWindowInfo / CGWindowListCreateImage
 NSPanel / NSStatusItem / NSWorkspace
+Carbon / RegisterEventHotKey
 ServiceManagement / SMAppService
 ```
 
@@ -138,6 +142,8 @@ macOS 没有公开的 Dock hover API，也没有公开 API 可以从 Dock 图标
 最小化窗口无法通过公开 CoreGraphics API 截取实时缩略图，所以会显示“已最小化”占位图。点击后会通过 `AXMinimized = false` 尝试恢复窗口。
 
 hover 卡片时的“只看当前窗口”效果是公开 API 下的视觉模拟：App 会覆盖一层半透明面板并绘制当前窗口截图，不会真的隐藏其它窗口。
+
+`Option+Tab` 通过公开 Carbon HotKey API 注册全局快捷键。窗口聚焦仍依赖 Accessibility；如果缺少辅助功能权限，可能只能激活 App，无法稳定聚焦到精确窗口。
 
 全屏 Space、Stage Manager、多显示器、Dock 自动隐藏和 Dock 放大可能影响命中测试和面板定位。
 
