@@ -2,6 +2,12 @@
 
 All notable Y-Dock release changes are tracked here.
 
+## v1.0.4 - 2026-06-24
+
+- Enlarged the `Option+Tab` switcher cards and acrylic panel by another 30% for easier window recognition.
+- Changed the `Option+Tab` first render to include minimized windows immediately when Accessibility permission is available.
+- Fixed minimized-window collection so separate windows with similar titles and sizes are no longer incorrectly filtered out.
+
 ## v1.0.3 - 2026-06-23
 
 - Enlarged the `Option+Tab` switcher cards by 15% for easier scanning.

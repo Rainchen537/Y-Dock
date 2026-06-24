@@ -255,11 +255,10 @@ final class WindowCollector {
             let fallbackBounds = bounds.width >= 40 && bounds.height >= 40 ? bounds : CGRect(x: 0, y: 0, width: 900, height: 560)
             let cgCandidate = bestCGCandidate(forTitle: displayTitle, bounds: fallbackBounds, in: offscreenCandidates)
 
-            if results.contains(where: { existing in
-                normalize(existing.title) == normalize(displayTitle)
-                    && abs(existing.bounds.width - bounds.width) < 12
-                    && abs(existing.bounds.height - bounds.height) < 12
-            }) {
+            if let candidateWindowID = cgCandidate?.windowID,
+               results.contains(where: { existing in
+                   existing.ownerPID == processIdentifier && existing.windowID == candidateWindowID
+               }) {
                 continue
             }
 

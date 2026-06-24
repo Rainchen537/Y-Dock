@@ -237,9 +237,14 @@ final class OptionTabSwitcher {
             return
         }
 
-        let fastWindows = windowCollector.switchableWindows(includeMinimized: false)
-        let usedFastPath = !fastWindows.isEmpty
-        let windows = usedFastPath ? fastWindows : windowCollector.switchableWindows(includeMinimized: true)
+        // Option+Tab is an intentional switcher, so the first frame should include
+        // minimized windows when Accessibility allows it. Dock hover still keeps
+        // the lighter fast path elsewhere for sweep performance.
+        let includeMinimized = AXIsProcessTrusted()
+        var windows = windowCollector.switchableWindows(includeMinimized: includeMinimized)
+        if windows.isEmpty, includeMinimized {
+            windows = windowCollector.switchableWindows(includeMinimized: false)
+        }
         guard !windows.isEmpty else {
             NSSound.beep()
             return
@@ -260,10 +265,6 @@ final class OptionTabSwitcher {
 
         panel.show(items: items, selectedIndex: selectedIndex)
         loadThumbnails(for: items, sessionID: currentSessionID)
-
-        if usedFastPath {
-            loadExpandedWindowListIfNeeded(sessionID: currentSessionID)
-        }
     }
 
     private func moveSelection(direction: Int) {
@@ -381,7 +382,7 @@ final class OptionTabSwitcher {
     }
 
     private func thumbnailTargetSize(for window: WindowInfo) -> CGSize {
-        let cardScale: CGFloat = 1.15
+        let cardScale: CGFloat = 1.50
         let baseHeight: CGFloat = max(96, min(128, CGFloat(settings.thumbnailHeight) * 0.68))
         let height = baseHeight * cardScale
         let aspect = window.bounds.height > 0 ? window.bounds.width / window.bounds.height : 1.6
@@ -395,13 +396,13 @@ private final class OptionTabPanel: NSPanel {
     var onClickItem: ((Int) -> Void)?
 
     private enum Metrics {
-        static let outerPadding: CGFloat = 20
-        static let cardGap: CGFloat = 14
-        static let rowGap: CGFloat = 14
-        static let minPanelWidth: CGFloat = 360
+        static let outerPadding: CGFloat = 24
+        static let cardGap: CGFloat = 18
+        static let rowGap: CGFloat = 18
+        static let minPanelWidth: CGFloat = 460
         static let maxScreenWidthRatio: CGFloat = 0.8
-        static let maxPanelHeightInset: CGFloat = 130
-        static let panelCornerRadius: CGFloat = 24
+        static let maxPanelHeightInset: CGFloat = 110
+        static let panelCornerRadius: CGFloat = 28
     }
 
     private let backgroundView = NSVisualEffectView()
@@ -632,11 +633,13 @@ private final class OptionTabCardView: NSView {
     }
 
     private enum Metrics {
-        static let horizontalPadding: CGFloat = 9
-        static let verticalPadding: CGFloat = 9
-        static let iconSize: CGFloat = 28
-        static let titleHeight: CGFloat = 39
-        static let thumbnailCornerRadius: CGFloat = 8
+        static let horizontalPadding: CGFloat = 12
+        static let verticalPadding: CGFloat = 12
+        static let iconSize: CGFloat = 36
+        static let titleGap: CGFloat = 12
+        static let titleHeight: CGFloat = 51
+        static let cardCornerRadius: CGFloat = 20
+        static let thumbnailCornerRadius: CGFloat = 10
     }
 
     private let item: OptionTabItem
@@ -661,7 +664,7 @@ private final class OptionTabCardView: NSView {
 
     static func preferredSize(for item: OptionTabItem) -> CGSize {
         CGSize(
-            width: max(193, item.thumbnailSize.width + Metrics.horizontalPadding * 2),
+            width: max(251, item.thumbnailSize.width + Metrics.horizontalPadding * 2),
             height: item.thumbnailSize.height + Metrics.verticalPadding * 2 + Metrics.titleHeight
         )
     }
@@ -680,7 +683,7 @@ private final class OptionTabCardView: NSView {
 
     private func setupViews() {
         wantsLayer = true
-        layer?.cornerRadius = 15
+        layer?.cornerRadius = Metrics.cardCornerRadius
         layer?.cornerCurve = .continuous
         layer?.borderWidth = 1
 
@@ -688,7 +691,7 @@ private final class OptionTabCardView: NSView {
         iconView.imageScaling = .scaleProportionallyUpOrDown
 
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
-        titleLabel.font = .systemFont(ofSize: 15, weight: .semibold)
+        titleLabel.font = .systemFont(ofSize: 20, weight: .semibold)
         titleLabel.textColor = .white
         titleLabel.lineBreakMode = .byTruncatingTail
         titleLabel.maximumNumberOfLines = 1
@@ -714,7 +717,7 @@ private final class OptionTabCardView: NSView {
             iconView.widthAnchor.constraint(equalToConstant: Metrics.iconSize),
             iconView.heightAnchor.constraint(equalToConstant: Metrics.iconSize),
 
-            titleLabel.leadingAnchor.constraint(equalTo: iconView.trailingAnchor, constant: 9),
+            titleLabel.leadingAnchor.constraint(equalTo: iconView.trailingAnchor, constant: Metrics.titleGap),
             titleLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -Metrics.horizontalPadding),
             titleLabel.centerYAnchor.constraint(equalTo: iconView.centerYAnchor),
 

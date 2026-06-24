@@ -14,6 +14,7 @@ Core behavior:
 - Keeps preview UI lightweight: show panels quickly, then fill thumbnails from background queues where possible.
 - Uses different preview layouts by context: Dock hover previews use compact joined cards, while `Option+Tab` uses a single acrylic switcher panel with independent rounded cards and centered wrapping rows.
 - `Option+Tab` cards intentionally show only the window title. Do not add a repeated app-name subtitle; `Esc` cancels the active switcher without activating a window.
+- `Option+Tab` should include minimized windows in the initial list when Accessibility is trusted. Avoid title/size-only de-duping for minimized windows because separate browser or document windows often share similar metadata.
 - Uses CoreGraphics window lists and snapshots for thumbnails.
 - Uses Accessibility to raise, focus, minimize, close, restore minimized windows, or terminate the owning app.
 - Uses public APIs only. macOS does not expose a public Dock hover/window-preview API.
