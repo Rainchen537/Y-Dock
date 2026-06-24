@@ -112,7 +112,7 @@ final class WindowThumbnailProvider {
         previewCacheOrder.removeAll { $0.ownerPID == ownerPID }
     }
 
-    private func captureWindowImage(for window: WindowInfo, targetSize: NSSize) -> NSImage? {
+    private func captureWindowImage(for window: WindowInfo, targetSize _: NSSize) -> NSImage? {
         let options: CGWindowImageOption = [.boundsIgnoreFraming, .bestResolution]
         guard let cgImage = CGWindowListCreateImage(.null, .optionIncludingWindow, window.windowID, options) else {
             return nil
@@ -122,7 +122,8 @@ final class WindowThumbnailProvider {
             return nil
         }
 
-        return NSImage(cgImage: cgImage, size: targetSize)
+        let imageSize = NSSize(width: CGFloat(cgImage.width), height: CGFloat(cgImage.height))
+        return NSImage(cgImage: cgImage, size: imageSize)
     }
 
     private func cachedThumbnail(for window: WindowInfo, targetSize: NSSize) -> NSImage? {
@@ -251,7 +252,13 @@ final class WindowThumbnailProvider {
         ]
         let text = "\(reason)\n\(title)"
         let attributed = NSAttributedString(string: text, attributes: attributes)
-        let textRect = NSRect(x: 12, y: (size.height - 44) / 2, width: size.width - 24, height: 44)
+        let horizontalInset = min(12, max(2, size.width * 0.12))
+        let textRect = NSRect(
+            x: horizontalInset,
+            y: (size.height - 44) / 2,
+            width: max(1, size.width - horizontalInset * 2),
+            height: 44
+        )
         attributed.draw(in: textRect)
 
         image.unlockFocus()
@@ -263,12 +270,14 @@ final class WindowThumbnailProvider {
         image.lockFocus()
 
         let rect = NSRect(origin: .zero, size: size)
-        base.draw(in: rect, from: .zero, operation: .copy, fraction: 1)
+        NSGraphicsContext.current?.imageInterpolation = .high
+        base.drawAspectFit(in: rect, operation: .copy, fraction: 1)
 
         NSColor(calibratedWhite: 0, alpha: 0.40).setFill()
         NSBezierPath(roundedRect: rect, xRadius: 10, yRadius: 10).fill()
 
-        let pillWidth = min(max(112, size.width * 0.44), size.width - 28)
+        let pillInset = min(14, max(2, size.width * 0.12))
+        let pillWidth = min(max(68, size.width * 0.56), max(1, size.width - pillInset * 2))
         let pillRect = NSRect(
             x: (size.width - pillWidth) / 2,
             y: (size.height - 34) / 2,
@@ -284,14 +293,17 @@ final class WindowThumbnailProvider {
         border.lineWidth = 1
         border.stroke()
 
-        let iconRect = NSRect(x: pillRect.minX + 14, y: pillRect.midY - 5, width: 14, height: 10)
-        NSColor(calibratedWhite: 0.92, alpha: 0.95).setStroke()
-        let line = NSBezierPath()
-        line.lineWidth = 2.2
-        line.lineCapStyle = .round
-        line.move(to: NSPoint(x: iconRect.minX, y: iconRect.midY))
-        line.line(to: NSPoint(x: iconRect.maxX, y: iconRect.midY))
-        line.stroke()
+        let showsIcon = pillRect.width >= 82
+        if showsIcon {
+            let iconRect = NSRect(x: pillRect.minX + 14, y: pillRect.midY - 5, width: 14, height: 10)
+            NSColor(calibratedWhite: 0.92, alpha: 0.95).setStroke()
+            let line = NSBezierPath()
+            line.lineWidth = 2.2
+            line.lineCapStyle = .round
+            line.move(to: NSPoint(x: iconRect.minX, y: iconRect.midY))
+            line.line(to: NSPoint(x: iconRect.maxX, y: iconRect.midY))
+            line.stroke()
+        }
 
         let paragraphStyle = NSMutableParagraphStyle()
         paragraphStyle.alignment = .center
@@ -302,7 +314,14 @@ final class WindowThumbnailProvider {
             .foregroundColor: NSColor(calibratedWhite: 0.94, alpha: 1),
             .paragraphStyle: paragraphStyle
         ]
-        let textRect = NSRect(x: pillRect.minX + 30, y: pillRect.minY + 8, width: pillRect.width - 42, height: 18)
+        let textInset: CGFloat = showsIcon ? 30 : 8
+        let trailingInset: CGFloat = showsIcon ? 12 : 8
+        let textRect = NSRect(
+            x: pillRect.minX + textInset,
+            y: pillRect.minY + 8,
+            width: max(1, pillRect.width - textInset - trailingInset),
+            height: 18
+        )
         NSAttributedString(string: "已最小化", attributes: attributes).draw(in: textRect)
 
         image.unlockFocus()
@@ -324,8 +343,37 @@ private extension NSImage {
         let image = NSImage(size: size)
         image.lockFocus()
         NSGraphicsContext.current?.imageInterpolation = .high
-        draw(in: NSRect(origin: .zero, size: size), from: .zero, operation: .copy, fraction: 1)
+        drawAspectFit(in: NSRect(origin: .zero, size: size), operation: .copy, fraction: 1)
         image.unlockFocus()
         return image
+    }
+
+    func drawAspectFit(
+        in rect: NSRect,
+        operation: NSCompositingOperation,
+        fraction: CGFloat
+    ) {
+        guard size.width > 0, size.height > 0, rect.width > 0, rect.height > 0 else {
+            draw(in: rect, from: .zero, operation: operation, fraction: fraction)
+            return
+        }
+
+        let sourceAspect = size.width / size.height
+        let targetAspect = rect.width / rect.height
+        let drawSize: NSSize
+
+        if sourceAspect > targetAspect {
+            drawSize = NSSize(width: rect.width, height: rect.width / sourceAspect)
+        } else {
+            drawSize = NSSize(width: rect.height * sourceAspect, height: rect.height)
+        }
+
+        let drawRect = NSRect(
+            x: rect.midX - drawSize.width / 2,
+            y: rect.midY - drawSize.height / 2,
+            width: drawSize.width,
+            height: drawSize.height
+        )
+        draw(in: drawRect, from: .zero, operation: operation, fraction: fraction)
     }
 }
