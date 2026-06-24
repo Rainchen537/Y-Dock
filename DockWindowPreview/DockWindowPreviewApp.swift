@@ -411,14 +411,39 @@ final class DockWindowPreviewApp: NSObject, NSApplicationDelegate {
         let alert = NSAlert()
         alert.alertStyle = .informational
         alert.messageText = "\(AppBranding.displayName) 有新版本 \(release.displayVersion)"
-        alert.informativeText = "\(release.name)\n\n是否打开下载页面？"
-        alert.addButton(withTitle: "打开下载页面")
+        alert.informativeText = "\(release.name)\n\n可以直接下载、安装并重启。"
+        alert.addButton(withTitle: "下载并安装")
+        alert.addButton(withTitle: "打开页面")
         alert.addButton(withTitle: "稍后")
 
         NSApp.activate(ignoringOtherApps: true)
-        if alert.runModal() == .alertFirstButtonReturn {
+        switch alert.runModal() {
+        case .alertFirstButtonReturn:
+            installUpdate(release)
+        case .alertSecondButtonReturn:
             updateChecker.openDownloadOrReleasePage(release)
+        default:
+            break
         }
+    }
+
+    private func installUpdate(_ release: UpdateChecker.ReleaseInfo) {
+        updateChecker.downloadAndInstall(release) { status in
+            DWLog("Update install status: \(status.displayText)")
+        } completion: { [weak self] result in
+            DispatchQueue.main.async {
+                if case .failure(let error) = result {
+                    self?.showUpdateInstallError(error)
+                }
+            }
+        }
+    }
+
+    private func showUpdateInstallError(_ error: Error) {
+        let alert = NSAlert(error: error)
+        alert.messageText = "自动更新失败"
+        alert.informativeText = error.localizedDescription
+        alert.runModal()
     }
 
     @objc private func openAccessibilitySettings() {

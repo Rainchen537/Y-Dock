@@ -563,18 +563,51 @@ private final class SettingsViewController: NSViewController {
         let alert = NSAlert()
         alert.alertStyle = .informational
         alert.messageText = "发现新版本 \(release.displayVersion)"
-        alert.informativeText = "\(release.name)\n\n当前可以打开下载页面获取最新 DMG。"
-        alert.addButton(withTitle: "打开下载页面")
+        alert.informativeText = "\(release.name)\n\n可以直接下载、安装并重启。"
+        alert.addButton(withTitle: "下载并安装")
+        alert.addButton(withTitle: "打开页面")
         alert.addButton(withTitle: "稍后")
 
-        if alert.runModal() == .alertFirstButtonReturn {
+        switch alert.runModal() {
+        case .alertFirstButtonReturn:
+            installUpdate(release)
+        case .alertSecondButtonReturn:
             updateChecker.openDownloadOrReleasePage(release)
+        default:
+            break
+        }
+    }
+
+    private func installUpdate(_ release: UpdateChecker.ReleaseInfo) {
+        checkUpdatesButton.isEnabled = false
+        updateChecker.downloadAndInstall(release) { [weak self] status in
+            DispatchQueue.main.async {
+                self?.updateStatusPill.setText(status.displayText, tone: .accent)
+            }
+        } completion: { [weak self] result in
+            DispatchQueue.main.async {
+                switch result {
+                case .success:
+                    self?.updateStatusPill.setText("正在重启", tone: .accent)
+                case .failure(let error):
+                    self?.checkUpdatesButton.isEnabled = true
+                    self?.updateStatusPill.setText("安装失败", tone: .warning)
+                    self?.showUpdateInstallError(error)
+                }
+            }
         }
     }
 
     private func showUpdateCheckError(_ error: Error) {
         let alert = NSAlert(error: error)
         alert.messageText = "检查更新失败"
+        alert.informativeText = error.localizedDescription
+        alert.runModal()
+    }
+
+    private func showUpdateInstallError(_ error: Error) {
+        let alert = NSAlert(error: error)
+        alert.messageText = "自动更新失败"
         alert.informativeText = error.localizedDescription
         alert.runModal()
     }

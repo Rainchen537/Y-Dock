@@ -9,6 +9,231 @@ private struct OptionTabItem {
     let thumbnailSize: NSSize
 }
 
+private final class WindowFocusHistory {
+    private struct Entry {
+        let ownerPID: pid_t
+        let titleKey: String
+        let roundedWidth: Int
+        let roundedHeight: Int
+        let isWindowSpecific: Bool
+        let sequence: UInt64
+
+        func matches(_ window: WindowInfo) -> Bool {
+            guard ownerPID == window.ownerPID else { return false }
+            guard isWindowSpecific else { return true }
+
+            let windowTitleKey = Self.normalizedTitle(window.title)
+            guard titleKey.isEmpty || windowTitleKey == titleKey else { return false }
+
+            let width = Self.roundedDimension(window.bounds.width)
+            let height = Self.roundedDimension(window.bounds.height)
+            return abs(width - roundedWidth) <= 32 && abs(height - roundedHeight) <= 32
+        }
+
+        func isSameWindow(as other: Entry) -> Bool {
+            ownerPID == other.ownerPID
+                && titleKey == other.titleKey
+                && roundedWidth == other.roundedWidth
+                && roundedHeight == other.roundedHeight
+                && isWindowSpecific == other.isWindowSpecific
+        }
+
+        static func app(ownerPID: pid_t, sequence: UInt64) -> Entry {
+            Entry(
+                ownerPID: ownerPID,
+                titleKey: "",
+                roundedWidth: 0,
+                roundedHeight: 0,
+                isWindowSpecific: false,
+                sequence: sequence
+            )
+        }
+
+        static func window(ownerPID: pid_t, title: String, bounds: CGRect, sequence: UInt64) -> Entry {
+            Entry(
+                ownerPID: ownerPID,
+                titleKey: normalizedTitle(title),
+                roundedWidth: roundedDimension(bounds.width),
+                roundedHeight: roundedDimension(bounds.height),
+                isWindowSpecific: true,
+                sequence: sequence
+            )
+        }
+
+        private static func normalizedTitle(_ title: String) -> String {
+            title
+                .lowercased()
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .replacingOccurrences(of: " ", with: "")
+        }
+
+        private static func roundedDimension(_ value: CGFloat) -> Int {
+            Int((max(1, value) / 16).rounded()) * 16
+        }
+    }
+
+    private var entries: [Entry] = []
+    private var sequence: UInt64 = 0
+    private var activationObserver: NSObjectProtocol?
+    private var pollTimer: Timer?
+    private let maximumEntries = 80
+
+    func start() {
+        guard activationObserver == nil, pollTimer == nil else { return }
+        recordCurrentFocus(includeWindow: true)
+
+        activationObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.recordCurrentFocus(includeWindow: false)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.06) {
+                self?.recordCurrentFocus(includeWindow: true)
+            }
+        }
+
+        let timer = Timer(timeInterval: 0.30, repeats: true) { [weak self] _ in
+            self?.recordCurrentFocus(includeWindow: true)
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        pollTimer = timer
+    }
+
+    func stop() {
+        if let activationObserver {
+            NSWorkspace.shared.notificationCenter.removeObserver(activationObserver)
+        }
+        activationObserver = nil
+        pollTimer?.invalidate()
+        pollTimer = nil
+        entries.removeAll()
+    }
+
+    func recordCurrentApplication() {
+        recordCurrentFocus(includeWindow: false)
+    }
+
+    func sorted(_ windows: [WindowInfo]) -> [WindowInfo] {
+        guard !entries.isEmpty, windows.count > 1 else { return windows }
+
+        return windows.enumerated().sorted { lhs, rhs in
+            let leftRank = rank(for: lhs.element)
+            let rightRank = rank(for: rhs.element)
+            if leftRank != rightRank {
+                return leftRank < rightRank
+            }
+            return lhs.offset < rhs.offset
+        }.map(\.element)
+    }
+
+    private func rank(for window: WindowInfo) -> Int {
+        entries.firstIndex { $0.matches(window) } ?? Int.max
+    }
+
+    private func recordCurrentFocus(includeWindow: Bool) {
+        guard
+            let app = NSWorkspace.shared.frontmostApplication,
+            app.processIdentifier != ProcessInfo.processInfo.processIdentifier,
+            app.activationPolicy == .regular
+        else {
+            return
+        }
+
+        if includeWindow,
+           AXIsProcessTrusted(),
+           let windowEntry = focusedWindowEntry(for: app) {
+            remember(windowEntry)
+            return
+        }
+
+        if !includeWindow, entries.first?.ownerPID == app.processIdentifier {
+            return
+        }
+
+        remember(nextEntry { Entry.app(ownerPID: app.processIdentifier, sequence: $0) })
+    }
+
+    private func focusedWindowEntry(for app: NSRunningApplication) -> Entry? {
+        let appElement = AXUIElementCreateApplication(app.processIdentifier)
+        guard let focusedWindow = attribute(appElement, kAXFocusedWindowAttribute) as AXUIElement? else {
+            return nil
+        }
+
+        if let role = attribute(focusedWindow, kAXRoleAttribute) as String?,
+           role != kAXWindowRole {
+            return nil
+        }
+
+        let title = ((attribute(focusedWindow, kAXTitleAttribute) as String?) ?? app.localizedName ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let bounds = frame(of: focusedWindow) ?? .zero
+        guard !title.isEmpty || (bounds.width >= 40 && bounds.height >= 40) else {
+            return nil
+        }
+
+        return nextEntry {
+            Entry.window(
+                ownerPID: app.processIdentifier,
+                title: title,
+                bounds: bounds,
+                sequence: $0
+            )
+        }
+    }
+
+    private func nextEntry(_ makeEntry: (UInt64) -> Entry) -> Entry {
+        sequence &+= 1
+        return makeEntry(sequence)
+    }
+
+    private func remember(_ entry: Entry) {
+        entries.removeAll { existing in
+            if existing.isSameWindow(as: entry) {
+                return true
+            }
+
+            if entry.isWindowSpecific {
+                return !existing.isWindowSpecific && existing.ownerPID == entry.ownerPID
+            }
+
+            return !existing.isWindowSpecific && existing.ownerPID == entry.ownerPID
+        }
+        entries.insert(entry, at: 0)
+
+        if entries.count > maximumEntries {
+            entries.removeLast(entries.count - maximumEntries)
+        }
+    }
+
+    private func attribute<T>(_ element: AXUIElement, _ attribute: String) -> T? {
+        var value: CFTypeRef?
+        let error = AXUIElementCopyAttributeValue(element, attribute as CFString, &value)
+        guard error == .success else { return nil }
+        return value as? T
+    }
+
+    private func frame(of element: AXUIElement) -> CGRect? {
+        guard
+            let positionValue = attribute(element, kAXPositionAttribute) as AXValue?,
+            let sizeValue = attribute(element, kAXSizeAttribute) as AXValue?
+        else {
+            return nil
+        }
+
+        var point = CGPoint.zero
+        var size = CGSize.zero
+        guard
+            AXValueGetValue(positionValue, .cgPoint, &point),
+            AXValueGetValue(sizeValue, .cgSize, &size)
+        else {
+            return nil
+        }
+
+        return CGRect(origin: point, size: size)
+    }
+}
+
 final class OptionTabSwitcher {
     private enum HotKeyID: UInt32 {
         case forward = 1
@@ -19,6 +244,7 @@ final class OptionTabSwitcher {
     private let thumbnailProvider: WindowThumbnailProvider
     private let windowActivator: WindowActivator
     private let settings: AppSettings
+    private let focusHistory = WindowFocusHistory()
     private lazy var panel: OptionTabPanel = {
         let panel = OptionTabPanel()
         panel.onClickItem = { [weak self] index in
@@ -67,6 +293,7 @@ final class OptionTabSwitcher {
 
     func start() {
         guard !isStarted else { return }
+        focusHistory.start()
         installHotKeyHandler()
         registerHotKeys()
         installFlagsMonitors()
@@ -123,6 +350,7 @@ final class OptionTabSwitcher {
         localKeyUpMonitor = nil
         globalMouseMonitor = nil
         localMouseMonitor = nil
+        focusHistory.stop()
         isStarted = false
     }
 
@@ -314,13 +542,12 @@ final class OptionTabSwitcher {
             return
         }
 
-        // Option+Tab is an intentional switcher, so the first frame should include
-        // minimized windows when Accessibility allows it. Dock hover still keeps
-        // the lighter fast path elsewhere for sweep performance.
-        let includeMinimized = AXIsProcessTrusted()
-        var windows = windowCollector.switchableWindows(includeMinimized: includeMinimized)
-        if windows.isEmpty, includeMinimized {
-            windows = windowCollector.switchableWindows(includeMinimized: false)
+        // Keep the hotkey path short: show visible windows immediately, then let
+        // the background expansion add minimized windows if Accessibility allows.
+        focusHistory.recordCurrentApplication()
+        var windows = focusHistory.sorted(windowCollector.switchableWindows(includeMinimized: false))
+        if windows.isEmpty, AXIsProcessTrusted() {
+            windows = focusHistory.sorted(windowCollector.switchableWindows(includeMinimized: true))
         }
         guard !windows.isEmpty else {
             NSSound.beep()
@@ -342,6 +569,7 @@ final class OptionTabSwitcher {
 
         panel.show(items: items, selectedIndex: selectedIndex)
         loadThumbnails(for: items, sessionID: currentSessionID)
+        loadExpandedWindowListIfNeeded(sessionID: currentSessionID)
     }
 
     private func moveSelection(direction: Int) {
@@ -469,17 +697,18 @@ final class OptionTabSwitcher {
         collectorQueue.async { [weak self] in
             guard let self else { return }
 
-            let windows = self.windowCollector.switchableWindows(includeMinimized: true)
+            let collectedWindows = self.windowCollector.switchableWindows(includeMinimized: true)
             DispatchQueue.main.async { [weak self] in
                 guard
                     let self,
                     self.isSwitching,
                     self.sessionID == sessionID,
-                    !windows.isEmpty
+                    !collectedWindows.isEmpty
                 else {
                     return
                 }
 
+                let windows = self.focusHistory.sorted(collectedWindows)
                 let currentIDs = self.items.map(\.window.windowID)
                 let nextIDs = windows.map(\.windowID)
                 guard currentIDs != nextIDs else { return }

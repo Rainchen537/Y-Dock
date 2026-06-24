@@ -2,6 +2,13 @@
 
 All notable Y-Dock release changes are tracked here.
 
+## v1.1.0 - 2026-06-25
+
+- Changed `Option+Tab` ordering to follow recent focus history, so pressing it once returns to the previously focused window.
+- Kept the `Option+Tab` hotkey path faster by showing visible windows immediately and loading minimized windows and thumbnails in the background.
+- Added direct in-app updating from GitHub releases: Y-Dock can download the notarized DMG, replace the installed app, and relaunch without manual drag-and-drop.
+- Prepared a signed and notarized DMG for updating local installations.
+
 ## v1.0.9 - 2026-06-24
 
 - Fixed `Option+Tab` switcher cards being stretched across the full panel by locking each card to its computed proportional thumbnail size.
