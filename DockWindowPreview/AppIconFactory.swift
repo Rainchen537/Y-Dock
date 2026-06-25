@@ -103,43 +103,28 @@ enum AppIconFactory {
         let image = NSImage(size: NSSize(width: 20, height: 20))
         image.lockFocus()
 
-        func strokedPath(alpha: CGFloat, lineWidth: CGFloat) -> NSBezierPath {
-            let path = NSBezierPath()
-            path.lineWidth = lineWidth
-            path.lineCapStyle = .round
-            path.lineJoinStyle = .round
-            NSColor.black.withAlphaComponent(alpha).setStroke()
-            return path
-        }
+        NSColor.black.setFill()
 
-        let rearWindow = NSBezierPath(roundedRect: NSRect(x: 7.0, y: 8.8, width: 8.6, height: 6.8), xRadius: 2.1, yRadius: 2.1)
-        rearWindow.lineWidth = 1.35
-        rearWindow.lineJoinStyle = .round
-        NSColor.black.withAlphaComponent(0.42).setStroke()
-        rearWindow.stroke()
+        let windowShape = NSBezierPath()
+        windowShape.windingRule = .evenOdd
+        windowShape.appendRoundedRect(
+            NSRect(x: 3.4, y: 5.0, width: 13.2, height: 11.4),
+            xRadius: 3.4,
+            yRadius: 3.4
+        )
+        windowShape.appendRoundedRect(
+            NSRect(x: 6.3, y: 8.1, width: 7.4, height: 5.0),
+            xRadius: 1.6,
+            yRadius: 1.6
+        )
+        windowShape.fill()
 
-        let frontWindow = NSBezierPath(roundedRect: NSRect(x: 3.2, y: 5.2, width: 12.6, height: 9.8), xRadius: 2.8, yRadius: 2.8)
-        frontWindow.lineWidth = 1.65
-        frontWindow.lineJoinStyle = .round
-        NSColor.black.setStroke()
-        frontWindow.stroke()
-
-        let titleLine = strokedPath(alpha: 0.92, lineWidth: 1.45)
-        titleLine.move(to: NSPoint(x: 5.8, y: 12.4))
-        titleLine.line(to: NSPoint(x: 13.1, y: 12.4))
-        titleLine.stroke()
-
-        let previewLine = strokedPath(alpha: 0.76, lineWidth: 1.35)
-        previewLine.move(to: NSPoint(x: 5.8, y: 9.6))
-        previewLine.line(to: NSPoint(x: 10.7, y: 9.6))
-        previewLine.move(to: NSPoint(x: 5.8, y: 7.3))
-        previewLine.line(to: NSPoint(x: 12.0, y: 7.3))
-        previewLine.stroke()
-
-        let dockLine = strokedPath(alpha: 0.95, lineWidth: 1.7)
-        dockLine.move(to: NSPoint(x: 4.4, y: 2.7))
-        dockLine.line(to: NSPoint(x: 15.6, y: 2.7))
-        dockLine.stroke()
+        let dockBase = NSBezierPath(
+            roundedRect: NSRect(x: 5.3, y: 2.8, width: 9.4, height: 1.9),
+            xRadius: 0.95,
+            yRadius: 0.95
+        )
+        dockBase.fill()
 
         image.unlockFocus()
         image.isTemplate = true

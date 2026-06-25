@@ -2,6 +2,10 @@
 
 All notable Y-Dock release changes are tracked here.
 
+## v1.1.3 - 2026-06-25
+
+- Redesigned the menu bar icon as a simpler solid template mark with a hollow window shape and compact Dock base.
+
 ## v1.1.2 - 2026-06-25
 
 - Made Dock hover preview cards use near-opaque adaptive gray or white backgrounds so window names stay readable on bright desktops.
