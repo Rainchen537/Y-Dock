@@ -2,6 +2,10 @@
 
 All notable Y-Dock release changes are tracked here.
 
+## v1.1.5 - 2026-06-27
+
+- Hide the Dock hover preview immediately when right-clicking in the Dock so the system Dock context menu is not covered.
+
 ## v1.1.4 - 2026-06-25
 
 - Enlarged the menu bar template icon so the solid hollow-window mark reads more clearly at status-bar size.

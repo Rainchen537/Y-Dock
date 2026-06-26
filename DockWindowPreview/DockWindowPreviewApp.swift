@@ -74,6 +74,11 @@ final class DockWindowPreviewApp: NSObject, NSApplicationDelegate {
             self?.previewPanel.hide()
             self?.previewContext = nil
         }
+        tracker.onSecondaryClickInDock = { [weak self] in
+            self?.cancelPreviewPrewarm()
+            self?.previewPanel.hide()
+            self?.previewContext = nil
+        }
         return tracker
     }()
 

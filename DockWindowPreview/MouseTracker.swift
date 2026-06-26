@@ -5,6 +5,7 @@ final class MouseTracker {
     var onHoverResolved: ((DockItem, NSPoint) -> Void)?
     var onDockHoverCandidateChanged: ((DockItem, Bool) -> Void)?
     var onMouseLeftDockAndPreview: (() -> Void)?
+    var onSecondaryClickInDock: (() -> Void)?
     var isPointInsidePreviewPanel: ((NSPoint) -> Bool)?
 
     private let dockInspector: DockInspector
@@ -26,13 +27,19 @@ final class MouseTracker {
     func start() {
         guard globalMonitor == nil, localMonitor == nil else { return }
 
-        let mask: NSEvent.EventTypeMask = [.mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged]
-        globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: mask) { [weak self] _ in
-            self?.handleMouseMove(at: NSEvent.mouseLocation)
+        let mask: NSEvent.EventTypeMask = [
+            .mouseMoved,
+            .leftMouseDragged,
+            .rightMouseDragged,
+            .otherMouseDragged,
+            .rightMouseDown
+        ]
+        globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: mask) { [weak self] event in
+            self?.handleMouseEvent(event)
         }
 
         localMonitor = NSEvent.addLocalMonitorForEvents(matching: mask) { [weak self] event in
-            self?.handleMouseMove(at: NSEvent.mouseLocation)
+            self?.handleMouseEvent(event)
             return event
         }
 
@@ -50,6 +57,35 @@ final class MouseTracker {
         localMonitor = nil
         cancelPendingHover()
         cancelPendingLeave()
+    }
+
+    private func handleMouseEvent(_ event: NSEvent) {
+        switch event.type {
+        case .rightMouseDown:
+            handleSecondaryMouseDown(at: NSEvent.mouseLocation)
+        default:
+            handleMouseMove(at: NSEvent.mouseLocation)
+        }
+    }
+
+    private func handleSecondaryMouseDown(at point: NSPoint) {
+        if !Thread.isMainThread {
+            DispatchQueue.main.async { [weak self] in
+                self?.handleSecondaryMouseDown(at: point)
+            }
+            return
+        }
+
+        guard let region = dockInspector.dockRegion(containing: point),
+              region.frame.insetBy(dx: -6, dy: -6).contains(point)
+        else {
+            return
+        }
+
+        currentHoverIdentity = nil
+        cancelPendingHover()
+        cancelPendingLeave()
+        onSecondaryClickInDock?()
     }
 
     private func handleMouseMove(at point: NSPoint) {
