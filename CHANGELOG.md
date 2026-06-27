@@ -2,6 +2,10 @@
 
 All notable Y-Dock release changes are tracked here.
 
+## v1.1.8 - 2026-06-27
+
+- Changed Dock right-click handling to immediately close the hover preview and keep previews suppressed until the context-menu interaction ends, avoiding menu misclicks and lower-layer preview stalls.
+
 ## v1.1.7 - 2026-06-27
 
 - Kept Dock hover previews below the Dock context menu for the full right-click menu session, even if the mouse moves away and returns before the menu is dismissed.

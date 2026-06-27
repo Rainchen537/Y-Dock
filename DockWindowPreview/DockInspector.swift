@@ -113,43 +113,6 @@ final class DockInspector {
         return nil
     }
 
-    func isDockContextMenuLikelyVisible(near point: NSPoint) -> Bool {
-        guard let dockApp = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier == "com.apple.dock" }) else {
-            return false
-        }
-
-        guard let windowList = CGWindowListCopyWindowInfo(
-            [.optionOnScreenOnly, .excludeDesktopElements],
-            kCGNullWindowID
-        ) as? [[String: Any]] else {
-            return false
-        }
-
-        let dockPID = Int(dockApp.processIdentifier)
-        let popUpMenuLevel = Int(CGWindowLevelForKey(.popUpMenuWindow))
-        let dockLevel = Int(CGWindowLevelForKey(.dockWindow))
-        let screenFrame = (screen(containing: point) ?? NSScreen.main)?.frame
-
-        return windowList.contains { info in
-            guard (info[kCGWindowOwnerPID as String] as? Int) == dockPID,
-                  let bounds = cgWindowBounds(from: info),
-                  isDockMenuSizedWindow(bounds),
-                  isNearReferenceScreen(bounds, screenFrame: screenFrame)
-            else {
-                return false
-            }
-
-            let layer = info[kCGWindowLayer as String] as? Int ?? 0
-            let name = (info[kCGWindowName as String] as? String)?.lowercased() ?? ""
-
-            if name.contains("menu") {
-                return true
-            }
-
-            return layer >= min(popUpMenuLevel - 2, dockLevel)
-        }
-    }
-
     private func bestDockItem(from element: AXUIElement, edge: DockEdge) -> DockItem? {
         var candidates: [AXUIElement] = [element]
         if let parent = elementAttribute(element, attribute: kAXParentAttribute) as AXUIElement? {
@@ -273,34 +236,6 @@ final class DockInspector {
 
     private func screen(containing point: NSPoint) -> NSScreen? {
         NSScreen.screens.first { $0.frame.contains(point) }
-    }
-
-    private func cgWindowBounds(from info: [String: Any]) -> CGRect? {
-        guard let rawBounds = info[kCGWindowBounds as String],
-              CFGetTypeID(rawBounds as CFTypeRef) == CFDictionaryGetTypeID()
-        else {
-            return nil
-        }
-
-        return CGRect(dictionaryRepresentation: rawBounds as! CFDictionary)
-    }
-
-    private func isDockMenuSizedWindow(_ bounds: CGRect) -> Bool {
-        let area = bounds.width * bounds.height
-        let aspectRatio = bounds.width / max(bounds.height, 1)
-        guard area >= 8_000, area <= 260_000 else { return false }
-        guard bounds.width >= 120, bounds.width <= 560 else { return false }
-        guard bounds.height >= 120, bounds.height <= 900 else { return false }
-        guard aspectRatio <= 3.0 else { return false }
-        return true
-    }
-
-    private func isNearReferenceScreen(_ bounds: CGRect, screenFrame: CGRect?) -> Bool {
-        guard let screenFrame else { return true }
-
-        let horizontalOverlap = max(0, min(bounds.maxX, screenFrame.maxX) - max(bounds.minX, screenFrame.minX))
-        let verticalOverlap = max(0, min(bounds.maxY, screenFrame.maxY) - max(bounds.minY, screenFrame.minY))
-        return horizontalOverlap > 0 && verticalOverlap > 0
     }
 
     private func dockOrientationFromDefaults() -> DockEdge? {

@@ -13,7 +13,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Rainchen537/DockWindowPreview/releases/tag/v1.1.7">
+  <a href="https://github.com/Rainchen537/DockWindowPreview/releases/tag/v1.1.8">
     <img alt="Release" src="https://img.shields.io/github/v/release/Rainchen537/DockWindowPreview?style=for-the-badge&color=1f8fff">
   </a>
   <img alt="macOS" src="https://img.shields.io/badge/macOS-13%2B-111827?style=for-the-badge&logo=apple">
@@ -23,7 +23,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Rainchen537/DockWindowPreview/releases/download/v1.1.7/Y-Dock-v1.1.7.dmg">
+  <a href="https://github.com/Rainchen537/DockWindowPreview/releases/download/v1.1.8/Y-Dock-v1.1.8.dmg">
     <img alt="Download DMG" src="https://img.shields.io/badge/Download-DMG-2563EB?style=for-the-badge&logo=github">
   </a>
 </p>
@@ -51,7 +51,7 @@
 ## 📦 安装
 
 1. 下载最新版 DMG：  
-   [Y-Dock-v1.1.7.dmg](https://github.com/Rainchen537/DockWindowPreview/releases/download/v1.1.7/Y-Dock-v1.1.7.dmg)
+   [Y-Dock-v1.1.8.dmg](https://github.com/Rainchen537/DockWindowPreview/releases/download/v1.1.8/Y-Dock-v1.1.8.dmg)
 2. 打开 DMG。
 3. 将 `Y-Dock.app` 拖到 `Applications`。
 4. 启动 `Y-Dock`，按提示开启权限。

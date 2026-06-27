@@ -36,11 +36,8 @@ final class DockWindowPreviewApp: NSObject, NSApplicationDelegate {
     private var previewPrewarmIdentity: String?
     private var isDockContextMenuProtectionActive = false
     private var dockContextMenuProtectionStartedAt: TimeInterval?
-    private var dockContextMenuProtectionAnchor: NSPoint?
-    private var shouldEndDockContextMenuProtectionWhenMenuCloses = false
     private var dockContextMenuProtectionWorkItem: DispatchWorkItem?
     private let dockContextMenuMinimumProtectionDuration: TimeInterval = 0.65
-    private let dockContextMenuProtectionPollInterval: TimeInterval = 0.12
 
     private lazy var previewPanel: PreviewPanel = {
         let panel = PreviewPanel(thumbnailProvider: thumbnailProvider, settings: settings)
@@ -226,7 +223,7 @@ final class DockWindowPreviewApp: NSObject, NSApplicationDelegate {
             return
         }
 
-        guard !isDockContextMenuProtectionActive || previewPanel.isVisible else {
+        guard !isDockContextMenuProtectionActive else {
             return
         }
 
@@ -237,10 +234,10 @@ final class DockWindowPreviewApp: NSObject, NSApplicationDelegate {
     private func beginDockContextMenuProtection(at point: NSPoint) {
         isDockContextMenuProtectionActive = true
         dockContextMenuProtectionStartedAt = Date.timeIntervalSinceReferenceDate
-        dockContextMenuProtectionAnchor = point
-        shouldEndDockContextMenuProtectionWhenMenuCloses = false
-        previewPanel.setDockContextMenuDeferralActive(true)
-        scheduleDockContextMenuProtectionCheck(after: dockContextMenuProtectionPollInterval)
+        cancelDockContextMenuProtectionTimer()
+        cancelPreviewPrewarm()
+        previewPanel.hide()
+        previewContext = nil
     }
 
     private func endDockContextMenuProtectionAfterMenuCloses() {
@@ -248,44 +245,13 @@ final class DockWindowPreviewApp: NSObject, NSApplicationDelegate {
 
         let elapsed = Date.timeIntervalSinceReferenceDate - (dockContextMenuProtectionStartedAt ?? 0)
         let delay = max(0.08, dockContextMenuMinimumProtectionDuration - elapsed)
-        shouldEndDockContextMenuProtectionWhenMenuCloses = true
-        scheduleDockContextMenuProtectionCheck(after: delay)
-    }
-
-    private func scheduleDockContextMenuProtectionCheck(after delay: TimeInterval) {
         cancelDockContextMenuProtectionTimer()
 
         let workItem = DispatchWorkItem { [weak self] in
-            self?.checkDockContextMenuProtection()
+            self?.endDockContextMenuProtection()
         }
         dockContextMenuProtectionWorkItem = workItem
         DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: workItem)
-    }
-
-    private func checkDockContextMenuProtection() {
-        guard
-            isDockContextMenuProtectionActive,
-            let startedAt = dockContextMenuProtectionStartedAt
-        else {
-            return
-        }
-
-        let elapsed = Date.timeIntervalSinceReferenceDate - startedAt
-        let menuVisible = dockContextMenuProtectionAnchor.map {
-            dockInspector.isDockContextMenuLikelyVisible(near: $0)
-        } ?? false
-
-        if elapsed < dockContextMenuMinimumProtectionDuration || menuVisible {
-            scheduleDockContextMenuProtectionCheck(after: dockContextMenuProtectionPollInterval)
-            return
-        }
-
-        if shouldEndDockContextMenuProtectionWhenMenuCloses {
-            endDockContextMenuProtection()
-            return
-        }
-
-        scheduleDockContextMenuProtectionCheck(after: dockContextMenuProtectionPollInterval)
     }
 
     private func endDockContextMenuProtection() {
@@ -294,9 +260,6 @@ final class DockWindowPreviewApp: NSObject, NSApplicationDelegate {
         cancelDockContextMenuProtectionTimer()
         isDockContextMenuProtectionActive = false
         dockContextMenuProtectionStartedAt = nil
-        dockContextMenuProtectionAnchor = nil
-        shouldEndDockContextMenuProtectionWhenMenuCloses = false
-        previewPanel.setDockContextMenuDeferralActive(false)
         mouseTracker.refreshCurrentHover()
     }
 

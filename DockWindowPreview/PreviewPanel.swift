@@ -71,9 +71,6 @@ final class PreviewPanel: NSPanel {
     var onMinimizeWindow: ((WindowInfo) -> Void)?
     var onQuitApplication: ((WindowInfo) -> Void)?
 
-    private static let normalWindowLevel = NSWindow.Level(rawValue: NSWindow.Level.screenSaver.rawValue - 1)
-    private static let dockContextMenuDeferralLevel = NSWindow.Level(rawValue: NSWindow.Level.popUpMenu.rawValue - 1)
-
     private let thumbnailProvider: WindowThumbnailProvider
     private let settings: AppSettings
     private let rootView = PreviewRootView()
@@ -90,7 +87,6 @@ final class PreviewPanel: NSPanel {
     private var currentApp: NSRunningApplication?
     private var currentAnchor: NSPoint?
     private var currentDockEdge: DockEdge?
-    private var isDeferringToDockContextMenu = false
 
     init(thumbnailProvider: WindowThumbnailProvider, settings: AppSettings = .shared) {
         self.thumbnailProvider = thumbnailProvider
@@ -106,7 +102,7 @@ final class PreviewPanel: NSPanel {
         // The Dock tooltip is owned by Dock.app and cannot be disabled through
         // public APIs. Keep the preview panel close to the Dock, but render it
         // above system tooltip-style windows instead of artificially lifting it.
-        level = Self.normalWindowLevel
+        level = NSWindow.Level(rawValue: NSWindow.Level.screenSaver.rawValue - 1)
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle, .stationary]
         isOpaque = false
         hasShadow = false
@@ -141,17 +137,6 @@ final class PreviewPanel: NSPanel {
         let targetFrame = positionedFrame(size: targetSize, anchor: anchor, dockEdge: dockEdge)
         setFrame(targetFrame, display: true)
         orderFrontRegardless()
-    }
-
-    func setDockContextMenuDeferralActive(_ active: Bool) {
-        guard isDeferringToDockContextMenu != active else { return }
-
-        isDeferringToDockContextMenu = active
-        level = active ? Self.dockContextMenuDeferralLevel : Self.normalWindowLevel
-
-        if isVisible {
-            orderFrontRegardless()
-        }
     }
 
     func hide() {
