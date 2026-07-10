@@ -3,8 +3,8 @@ import Foundation
 
 enum AppBranding {
     static let displayName = "Y-Dock"
-    static let repositoryName = "DockWindowPreview"
-    static let repositoryURL = URL(string: "https://github.com/Rainchen537/DockWindowPreview")!
+    static let repositoryName = "Y-Dock"
+    static let repositoryURL = URL(string: "https://github.com/Rainchen537/Y-Dock")!
 }
 
 extension Notification.Name {

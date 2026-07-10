@@ -92,7 +92,7 @@ final class UpdateChecker {
         }
     }
 
-    private let latestReleaseURL = URL(string: "https://api.github.com/repos/Rainchen537/DockWindowPreview/releases/latest")!
+    private let latestReleaseURL = URL(string: "https://api.github.com/repos/Rainchen537/Y-Dock/releases/latest")!
     private let decoder = JSONDecoder()
 
     var currentVersion: String {

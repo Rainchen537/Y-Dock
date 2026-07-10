@@ -13,8 +13,8 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Rainchen537/DockWindowPreview/releases/tag/v1.1.9">
-    <img alt="Release" src="https://img.shields.io/github/v/release/Rainchen537/DockWindowPreview?style=for-the-badge&color=1f8fff">
+  <a href="https://github.com/Rainchen537/Y-Dock/releases/tag/v1.1.9">
+    <img alt="Release" src="https://img.shields.io/github/v/release/Rainchen537/Y-Dock?style=for-the-badge&color=1f8fff">
   </a>
   <img alt="macOS" src="https://img.shields.io/badge/macOS-13%2B-111827?style=for-the-badge&logo=apple">
   <img alt="Swift" src="https://img.shields.io/badge/Swift-5-F05138?style=for-the-badge&logo=swift&logoColor=white">
@@ -23,7 +23,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Rainchen537/DockWindowPreview/releases/download/v1.1.9/Y-Dock-v1.1.9.dmg">
+  <a href="https://github.com/Rainchen537/Y-Dock/releases/download/v1.1.9/Y-Dock-v1.1.9.dmg">
     <img alt="Download DMG" src="https://img.shields.io/badge/Download-DMG-2563EB?style=for-the-badge&logo=github">
   </a>
 </p>
@@ -51,7 +51,7 @@
 ## 📦 安装
 
 1. 下载最新版 DMG：  
-   [Y-Dock-v1.1.9.dmg](https://github.com/Rainchen537/DockWindowPreview/releases/download/v1.1.9/Y-Dock-v1.1.9.dmg)
+   [Y-Dock-v1.1.9.dmg](https://github.com/Rainchen537/Y-Dock/releases/download/v1.1.9/Y-Dock-v1.1.9.dmg)
 2. 打开 DMG。
 3. 将 `Y-Dock.app` 拖到 `Applications`。
 4. 启动 `Y-Dock`，按提示开启权限。
@@ -117,9 +117,11 @@ ServiceManagement / SMAppService
 
 ## 🧑‍💻 从源码构建
 
+GitHub 仓库：[Rainchen537/Y-Dock](https://github.com/Rainchen537/Y-Dock)
+
 ```sh
-git clone https://github.com/Rainchen537/DockWindowPreview.git
-cd DockWindowPreview
+git clone https://github.com/Rainchen537/Y-Dock.git
+cd Y-Dock
 open DockWindowPreview.xcodeproj
 ```
 

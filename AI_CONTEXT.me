@@ -59,7 +59,7 @@ Do not change these unless explicitly requested:
 - Display name: `Y-Dock`
 - Deployment target: macOS 13+
 - App mode: `LSUIElement = true`
-- GitHub repository: `https://github.com/Rainchen537/DockWindowPreview`
+- GitHub repository: `https://github.com/Rainchen537/Y-Dock`
 - Xcode project/scheme naming: `DockWindowPreview`
 
 The app icon is currently a raw `.icns` resource referenced by `CFBundleIconFile = AppIcon`. If changing the logo, regenerate `DockWindowPreview/AppIcon.icns` and update the README logo asset/link. Keep the visible icon artwork inset inside the 1024 canvas; a full-bleed rounded square looks oversized in Launchpad.
@@ -145,7 +145,7 @@ git push origin v0.0.0
 gh release create v0.0.0 "dist/Y-Dock-v0.0.0.dmg" --title "Y-Dock v0.0.0" --notes-file build/release-notes-v0.0.0.txt
 ```
 
-If `gh` is unavailable, use the GitHub Releases REST API with the existing repo remote (`Rainchen537/DockWindowPreview`) and upload the same DMG asset. Do not skip updating `CHANGELOG.md`; README links and release notes should match the tag.
+If `gh` is unavailable, use the GitHub Releases REST API with the existing repo remote (`Rainchen537/Y-Dock`) and upload the same DMG asset. Do not skip updating `CHANGELOG.md`; README links and release notes should match the tag.
 
 ## Local Install Check
 
