@@ -2,6 +2,13 @@
 
 All notable Y-Dock release changes are tracked here.
 
+## v1.1.11 - 2026-07-13
+
+- Fixed the first `Option+Tab` invocation selecting the second card; it now starts on the first card in the displayed list.
+- Changed switcher ordering from visible-window Z-order to strict most-recently-focused window order for both visible and minimized windows.
+- Added event-driven Accessibility focus tracking with the existing lightweight polling path retained as a fallback.
+- Added ellipsis-aware AX/CG title matching so Chromium windows remain attached to the correct focus-history entry.
+
 ## v1.1.10 - 2026-07-13
 
 - Fixed Edge/Chromium multi-window activation when CGWindow titles are truncated with ellipses but AXWindow titles are full browser titles.

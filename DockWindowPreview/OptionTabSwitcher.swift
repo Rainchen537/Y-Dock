@@ -26,20 +26,40 @@ private final class WindowFocusHistory {
             guard isWindowSpecific else { return true }
 
             let windowTitleKey = Self.normalizedTitle(window.title)
-            guard titleKey.isEmpty || windowTitleKey == titleKey else { return false }
-
             let width = Self.roundedDimension(window.bounds.width)
             let height = Self.roundedDimension(window.bounds.height)
-            return abs(width - roundedWidth) <= 32 && abs(height - roundedHeight) <= 32
+            let dimensionsMatch = abs(width - roundedWidth) <= 32 && abs(height - roundedHeight) <= 32
+
+            if titleKey.isEmpty || windowTitleKey.isEmpty {
+                return dimensionsMatch
+            }
+
+            if titleKey == windowTitleKey {
+                return true
+            }
+
+            return dimensionsMatch && Self.titlesMatch(titleKey, windowTitleKey)
         }
 
         func isSameWindow(as other: Entry) -> Bool {
-            ownerPID == other.ownerPID
-                && windowID == other.windowID
-                && titleKey == other.titleKey
-                && roundedWidth == other.roundedWidth
-                && roundedHeight == other.roundedHeight
-                && isWindowSpecific == other.isWindowSpecific
+            guard ownerPID == other.ownerPID, isWindowSpecific == other.isWindowSpecific else {
+                return false
+            }
+            guard isWindowSpecific else { return true }
+
+            if let windowID, let otherWindowID = other.windowID {
+                return windowID == otherWindowID
+            }
+
+            let dimensionsMatch = abs(roundedWidth - other.roundedWidth) <= 32
+                && abs(roundedHeight - other.roundedHeight) <= 32
+            if titleKey.isEmpty || other.titleKey.isEmpty {
+                return dimensionsMatch
+            }
+            if titleKey == other.titleKey {
+                return true
+            }
+            return dimensionsMatch && Self.titlesMatch(titleKey, other.titleKey)
         }
 
         static func app(ownerPID: pid_t) -> Entry {
@@ -76,24 +96,63 @@ private final class WindowFocusHistory {
         }
 
         private static func normalizedTitle(_ title: String) -> String {
-            title
+            String(title
                 .lowercased()
                 .trimmingCharacters(in: .whitespacesAndNewlines)
-                .replacingOccurrences(of: " ", with: "")
+                .replacingOccurrences(of: "...", with: "…")
+                .filter { !$0.isWhitespace })
         }
 
         private static func roundedDimension(_ value: CGFloat) -> Int {
             Int((max(1, value) / 16).rounded()) * 16
         }
+
+        private static func titlesMatch(_ lhs: String, _ rhs: String) -> Bool {
+            let shortestCount = min(lhs.count, rhs.count)
+            if shortestCount >= 6, lhs.contains(rhs) || rhs.contains(lhs) {
+                return true
+            }
+
+            return ellipsisPattern(lhs, matches: rhs) || ellipsisPattern(rhs, matches: lhs)
+        }
+
+        private static func ellipsisPattern(_ pattern: String, matches candidate: String) -> Bool {
+            guard pattern.contains("…") else { return false }
+            let parts = pattern.split(separator: "…").map(String.init).filter { !$0.isEmpty }
+            guard !parts.isEmpty else { return false }
+
+            var remaining = candidate[...]
+            for part in parts {
+                guard let range = remaining.range(of: part) else { return false }
+                remaining = remaining[range.upperBound...]
+            }
+            return true
+        }
     }
 
     private var entries: [Entry] = []
     private var activationObserver: NSObjectProtocol?
+    private var launchObserver: NSObjectProtocol?
+    private var terminationObserver: NSObjectProtocol?
+    private var axObservers: [pid_t: AXObserver] = [:]
     private var pollTimer: Timer?
+    private var pollTicks = 0
+    private var isStarted = false
     private let maximumEntries = 80
 
+    private static let axFocusCallback: AXObserverCallback = { _, _, _, refcon in
+        guard let refcon else { return }
+        let history = Unmanaged<WindowFocusHistory>.fromOpaque(refcon).takeUnretainedValue()
+        DispatchQueue.main.async {
+            guard history.isStarted else { return }
+            history.recordCurrentFocus(includeWindow: true)
+        }
+    }
+
     func start() {
-        guard activationObserver == nil, pollTimer == nil else { return }
+        guard !isStarted else { return }
+        isStarted = true
+        refreshAXObservers()
         recordCurrentFocus(includeWindow: true)
 
         activationObserver = NSWorkspace.shared.notificationCenter.addObserver(
@@ -101,36 +160,85 @@ private final class WindowFocusHistory {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.recordCurrentFocus(includeWindow: false)
+            self?.recordCurrentFocus(includeWindow: true)
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.06) {
+                guard self?.isStarted == true else { return }
                 self?.recordCurrentFocus(includeWindow: true)
             }
         }
 
+        launchObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didLaunchApplicationNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            guard
+                let self,
+                let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+            else {
+                return
+            }
+            self.registerAXObserver(for: app)
+        }
+
+        terminationObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didTerminateApplicationNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            guard
+                let self,
+                let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+            else {
+                return
+            }
+            self.removeAXObserver(for: app.processIdentifier)
+        }
+
         let timer = Timer(timeInterval: 0.30, repeats: true) { [weak self] _ in
-            self?.recordCurrentFocus(includeWindow: true)
+            guard let self else { return }
+            self.recordCurrentFocus(includeWindow: true)
+            self.pollTicks += 1
+            if self.pollTicks >= 10 {
+                self.pollTicks = 0
+                self.refreshAXObservers()
+            }
         }
         RunLoop.main.add(timer, forMode: .common)
         pollTimer = timer
     }
 
     func stop() {
-        if let activationObserver {
-            NSWorkspace.shared.notificationCenter.removeObserver(activationObserver)
+        isStarted = false
+        for observer in [activationObserver, launchObserver, terminationObserver].compactMap({ $0 }) {
+            NSWorkspace.shared.notificationCenter.removeObserver(observer)
         }
         activationObserver = nil
+        launchObserver = nil
+        terminationObserver = nil
         pollTimer?.invalidate()
         pollTimer = nil
+        pollTicks = 0
+        for processIdentifier in Array(axObservers.keys) {
+            removeAXObserver(for: processIdentifier)
+        }
         entries.removeAll()
     }
 
-    func recordCurrentApplication() {
-        recordCurrentFocus(includeWindow: false)
+    func recordCurrentFocusNow() {
+        recordCurrentFocus(includeWindow: true)
     }
 
-    func recordVisibleZOrder(_ windows: [WindowInfo]) {
-        for window in windows.reversed() where !window.isMinimized {
-            remember(Entry.window(window))
+    func seedVisibleZOrder(_ windows: [WindowInfo]) {
+        for window in windows where !window.isMinimized {
+            guard !entries.contains(where: { $0.isWindowSpecific && $0.matches(window) }) else {
+                continue
+            }
+            entries.append(Entry.window(window))
+        }
+
+        if entries.count > maximumEntries {
+            entries.removeLast(entries.count - maximumEntries)
         }
     }
 
@@ -139,26 +247,106 @@ private final class WindowFocusHistory {
     }
 
     func windowsInAltTabOrder(_ windows: [WindowInfo]) -> [WindowInfo] {
-        let visibleWindows = windows.filter { !$0.isMinimized }
-        let minimizedWindows = windows.filter(\.isMinimized)
-        guard !minimizedWindows.isEmpty else {
-            return visibleWindows
-        }
-
-        let sortedMinimized = minimizedWindows.enumerated().sorted { lhs, rhs in
+        windows.enumerated().sorted { lhs, rhs in
             let leftRank = rank(for: lhs.element)
             let rightRank = rank(for: rhs.element)
-            if leftRank != rightRank {
-                return leftRank < rightRank
-            }
-            return lhs.offset < rhs.offset
-        }.map(\.element)
 
-        return visibleWindows + sortedMinimized
+            switch (leftRank, rightRank) {
+            case let (left?, right?) where left != right:
+                return left < right
+            case (_?, nil):
+                return true
+            case (nil, _?):
+                return false
+            default:
+                if lhs.element.isMinimized != rhs.element.isMinimized {
+                    return !lhs.element.isMinimized
+                }
+                return lhs.offset < rhs.offset
+            }
+        }.map(\.element)
     }
 
-    private func rank(for window: WindowInfo) -> Int {
-        entries.firstIndex { $0.matches(window) } ?? Int.max
+    private func rank(for window: WindowInfo) -> Int? {
+        if let windowRank = entries.firstIndex(where: { $0.isWindowSpecific && $0.matches(window) }) {
+            return windowRank
+        }
+        if let appRank = entries.firstIndex(where: { !$0.isWindowSpecific && $0.ownerPID == window.ownerPID }) {
+            return maximumEntries + appRank
+        }
+        return nil
+    }
+
+    private func refreshAXObservers() {
+        guard isStarted, AXIsProcessTrusted() else { return }
+
+        let currentPID = ProcessInfo.processInfo.processIdentifier
+        let apps = NSWorkspace.shared.runningApplications.filter {
+            !$0.isTerminated
+                && $0.processIdentifier != currentPID
+                && $0.activationPolicy == .regular
+        }
+        let livePIDs = Set(apps.map(\.processIdentifier))
+
+        for processIdentifier in Array(axObservers.keys) where !livePIDs.contains(processIdentifier) {
+            removeAXObserver(for: processIdentifier)
+        }
+        for app in apps {
+            registerAXObserver(for: app)
+        }
+    }
+
+    private func registerAXObserver(for app: NSRunningApplication) {
+        let processIdentifier = app.processIdentifier
+        guard
+            isStarted,
+            AXIsProcessTrusted(),
+            app.activationPolicy == .regular,
+            processIdentifier != ProcessInfo.processInfo.processIdentifier,
+            axObservers[processIdentifier] == nil
+        else {
+            return
+        }
+
+        var observer: AXObserver?
+        guard
+            AXObserverCreate(processIdentifier, Self.axFocusCallback, &observer) == .success,
+            let observer
+        else {
+            return
+        }
+
+        let appElement = AXUIElementCreateApplication(processIdentifier)
+        let refcon = Unmanaged.passUnretained(self).toOpaque()
+        let focusedStatus = AXObserverAddNotification(
+            observer,
+            appElement,
+            kAXFocusedWindowChangedNotification as CFString,
+            refcon
+        )
+        let mainStatus = AXObserverAddNotification(
+            observer,
+            appElement,
+            kAXMainWindowChangedNotification as CFString,
+            refcon
+        )
+        guard focusedStatus == .success || mainStatus == .success else { return }
+
+        CFRunLoopAddSource(
+            CFRunLoopGetMain(),
+            AXObserverGetRunLoopSource(observer),
+            CFRunLoopMode.commonModes
+        )
+        axObservers[processIdentifier] = observer
+    }
+
+    private func removeAXObserver(for processIdentifier: pid_t) {
+        guard let observer = axObservers.removeValue(forKey: processIdentifier) else { return }
+        CFRunLoopRemoveSource(
+            CFRunLoopGetMain(),
+            AXObserverGetRunLoopSource(observer),
+            CFRunLoopMode.commonModes
+        )
     }
 
     private func recordCurrentFocus(includeWindow: Bool) {
@@ -566,14 +754,14 @@ final class OptionTabSwitcher {
 
         // Keep the hotkey path short: show visible windows immediately, then let
         // the background expansion add minimized windows if Accessibility allows.
-        focusHistory.recordCurrentApplication()
+        focusHistory.recordCurrentFocusNow()
         let visibleWindows = windowCollector.switchableWindows(includeMinimized: false)
-        focusHistory.recordVisibleZOrder(visibleWindows)
+        focusHistory.seedVisibleZOrder(visibleWindows)
 
         var windows = focusHistory.windowsInAltTabOrder(visibleWindows)
         if windows.isEmpty, AXIsProcessTrusted() {
             let expandedWindows = windowCollector.switchableWindows(includeMinimized: true)
-            focusHistory.recordVisibleZOrder(expandedWindows)
+            focusHistory.seedVisibleZOrder(expandedWindows)
             windows = focusHistory.windowsInAltTabOrder(expandedWindows)
         }
         guard !windows.isEmpty else {
@@ -590,9 +778,9 @@ final class OptionTabSwitcher {
         isSwitching = true
         sessionID += 1
         let currentSessionID = sessionID
-        selectedIndex = items.count > 1
-            ? (direction > 0 ? 1 : items.count - 1)
-            : 0
+        selectedIndex = direction > 0 ? 0 : max(0, items.count - 1)
+        let orderSummary = windows.map { "\($0.ownerName)#\($0.windowID)" }.joined(separator: " > ")
+        DWLog("Option+Tab MRU order: \(orderSummary); selected index: \(selectedIndex)")
 
         panel.show(items: items, selectedIndex: selectedIndex)
         loadThumbnails(for: items, sessionID: currentSessionID)
@@ -736,7 +924,7 @@ final class OptionTabSwitcher {
                     return
                 }
 
-                self.focusHistory.recordVisibleZOrder(collectedWindows)
+                self.focusHistory.seedVisibleZOrder(collectedWindows)
                 let windows = self.focusHistory.windowsInAltTabOrder(collectedWindows)
                 let currentIDs = self.items.map(\.window.windowID)
                 let nextIDs = windows.map(\.windowID)

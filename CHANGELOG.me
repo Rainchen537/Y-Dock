@@ -6,6 +6,12 @@
 
 ## 2026-07-13
 
+- 修复 `Option+Tab` 首次呼出时固定选中第二张卡片的问题，改为从当前展示列表的第一张开始选择。
+- 将所有可见和最小化窗口统一改为严格 MRU 聚焦历史排序；CoreGraphics 当前 Z-order 只用于尚未记录过焦点的新窗口兜底。
+- 为运行中的普通 App 注册公开 Accessibility 聚焦窗口/主窗口通知，并保留 `300ms` 轻量轮询作为漏报兜底。
+- 增加 AX 完整标题与 CGWindow 省略号截断标题的兼容匹配，避免 Edge/Chromium 多窗口历史记录串位。
+- 准备发布 `v1.1.11`，版本号更新为 `MARKETING_VERSION=1.1.11`、`CURRENT_PROJECT_VERSION=36`，并同步更新 README、`AI_CONTEXT.me` 和 `CHANGELOG.md`。
+- 发布 `v1.1.11` 的签名、公证、staple 后 DMG，SHA256：`e53b645f9a335a78d08a17b2ecaa5ec36496c53163dc4908bca9eb68ddb01c75`。
 - 新增项目级 `AGENTS.md`，继承 Y-Project 根规范，并记录 Y-Dock 的仓库、分支、Xcode 版本字段、DMG 命名和本机安装验证要求。
 - 将“每次修改任务必须发布新版本”设为强制完成条件：签名、公证并 staple DMG，发布 GitHub Release，再从最终 DMG 覆盖安装本机 App。
 - 修复 Edge/Chromium 多窗口激活不稳定问题：当 CGWindow 标题被省略号截断、AXWindow 标题为完整浏览器标题时，使用省略号通配和 token fuzzy matching 识别目标窗口。
