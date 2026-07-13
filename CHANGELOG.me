@@ -12,6 +12,7 @@
 - 增加 AX 完整标题与 CGWindow 省略号截断标题的兼容匹配，避免 Edge/Chromium 多窗口历史记录串位。
 - 准备发布 `v1.1.11`，版本号更新为 `MARKETING_VERSION=1.1.11`、`CURRENT_PROJECT_VERSION=36`，并同步更新 README、`AI_CONTEXT.me` 和 `CHANGELOG.md`。
 - 发布 `v1.1.11` 的签名、公证、staple 后 DMG，SHA256：`e53b645f9a335a78d08a17b2ecaa5ec36496c53163dc4908bca9eb68ddb01c75`。
+- 完成 `v1.1.11` 发布闭环：源码提交 `a79b5f9`、tag `v1.1.11`、Release `https://github.com/Rainchen537/Y-Dock/releases/tag/v1.1.11`；最终 DMG 已覆盖安装到 `/Applications/Y-Dock.app`，确认版本 `1.1.11 (36)`、Developer ID/公证/Gatekeeper、辅助功能与屏幕录制权限、Dock 多窗口预览、设置权限页及更新检查均正常。真实 `Option+Tab` 日志确认首次 `selected index: 0`，并观察到聚焦后的 Edge 窗口从历史列表后部移动到首位、其余窗口保持原有 MRU 顺序。
 - 新增项目级 `AGENTS.md`，继承 Y-Project 根规范，并记录 Y-Dock 的仓库、分支、Xcode 版本字段、DMG 命名和本机安装验证要求。
 - 将“每次修改任务必须发布新版本”设为强制完成条件：签名、公证并 staple DMG，发布 GitHub Release，再从最终 DMG 覆盖安装本机 App。
 - 修复 Edge/Chromium 多窗口激活不稳定问题：当 CGWindow 标题被省略号截断、AXWindow 标题为完整浏览器标题时，使用省略号通配和 token fuzzy matching 识别目标窗口。
