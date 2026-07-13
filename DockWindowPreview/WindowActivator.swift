@@ -7,6 +7,23 @@ final class WindowActivator {
         // Best-effort public Accessibility attribute. Some apps keep minimized
         // windows outside AXWindows until they are restored.
         static let minimizedWindows = "AXMinimizedWindows"
+
+        // Best-effort public Accessibility attribute names observed on some
+        // apps. Edge/Chrome do not expose these today, so title/geometry remain
+        // the fallback path.
+        static let possibleWindowIDs = ["AXWindowID", "AXWindowNumber"]
+    }
+
+    private struct MatchDetails {
+        let window: AXUIElement
+        let score: Int
+        let titleScore: Int
+        let windowIDScore: Int
+        let geometryScore: Int
+
+        var hasIdentityEvidence: Bool {
+            titleScore > 0 || windowIDScore > 0
+        }
     }
 
     private var axWindowCache: [CGWindowID: AXUIElement] = [:]
@@ -39,8 +56,16 @@ final class WindowActivator {
             app.activate(options: [.activateIgnoringOtherApps])
             AXUIElementSetAttributeValue(appElement, kAXFrontmostAttribute as CFString, kCFBooleanTrue)
 
-            guard let matchingWindow = self.matchingWindow(for: window, appElement: appElement) ?? matchedBeforeActivation else {
+            guard let matchingWindow = self.matchingWindow(for: window, appElement: appElement, allowCached: false) ?? matchedBeforeActivation else {
                 DWLog("Could not match AX window for '\(window.title)'; app activation is the fallback")
+                return
+            }
+
+            self.focus(matchingWindow, appElement: appElement, targetWindow: window)
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.16) {
+            guard let matchingWindow = self.matchingWindow(for: window, appElement: appElement, allowCached: false) ?? matchedBeforeActivation else {
                 return
             }
 
@@ -131,14 +156,16 @@ final class WindowActivator {
         }
 
         let focusWork = {
-            let appFocusError = AXUIElementSetAttributeValue(appElement, kAXFocusedWindowAttribute as CFString, matchingWindow)
-            if appFocusError != AXError.success {
-                DWLog("Setting AXFocusedWindow failed for '\(targetWindow.title)': \(appFocusError.rawValue)")
-            }
+            AXUIElementSetAttributeValue(appElement, kAXFrontmostAttribute as CFString, kCFBooleanTrue)
 
             let raiseError = AXUIElementPerformAction(matchingWindow, kAXRaiseAction as CFString)
             if raiseError != AXError.success {
                 DWLog("AXRaise failed for '\(targetWindow.title)': \(raiseError.rawValue)")
+            }
+
+            let appFocusError = AXUIElementSetAttributeValue(appElement, kAXFocusedWindowAttribute as CFString, matchingWindow)
+            if appFocusError != AXError.success {
+                DWLog("Setting AXFocusedWindow failed for '\(targetWindow.title)': \(appFocusError.rawValue)")
             }
 
             let mainError = AXUIElementSetAttributeValue(matchingWindow, kAXMainAttribute as CFString, kCFBooleanTrue)
@@ -150,6 +177,13 @@ final class WindowActivator {
             if focusedError != AXError.success {
                 DWLog("Setting AXFocused failed for '\(targetWindow.title)': \(focusedError.rawValue)")
             }
+
+            let secondRaiseError = AXUIElementPerformAction(matchingWindow, kAXRaiseAction as CFString)
+            if secondRaiseError != AXError.success {
+                DWLog("Second AXRaise failed for '\(targetWindow.title)': \(secondRaiseError.rawValue)")
+            }
+
+            AXUIElementSetAttributeValue(appElement, kAXFocusedWindowAttribute as CFString, matchingWindow)
         }
 
         if targetWindow.isMinimized {
@@ -159,10 +193,18 @@ final class WindowActivator {
         }
     }
 
-    private func matchingWindow(for targetWindow: WindowInfo, appElement: AXUIElement) -> AXUIElement? {
-        if let cachedWindow = axWindowCache[targetWindow.windowID],
-           matchScore(targetWindow: targetWindow, axWindow: cachedWindow) >= 28 {
-            return cachedWindow
+    private func matchingWindow(for targetWindow: WindowInfo, appElement: AXUIElement, allowCached: Bool = true) -> AXUIElement? {
+        if allowCached,
+           let cachedWindow = axWindowCache[targetWindow.windowID] {
+            let cachedMatch = matchDetails(targetWindow: targetWindow, axWindow: cachedWindow)
+            if cachedMatch.hasIdentityEvidence || cachedMatch.score >= 50 {
+                return cachedWindow
+            }
+
+            // Browser windows often share identical geometry. A geometry-only
+            // cached match can point to the previous Edge/Chrome window after a
+            // tab title changes, so drop it and resolve from the current AX list.
+            axWindowCache.removeValue(forKey: targetWindow.windowID)
         }
 
         let axWindows = candidateWindows(for: appElement)
@@ -199,49 +241,69 @@ final class WindowActivator {
     }
 
     private func bestMatch(for targetWindow: WindowInfo, in axWindows: [AXUIElement]) -> AXUIElement? {
-        var best: (window: AXUIElement, score: Int)?
+        var best: MatchDetails?
 
         for axWindow in axWindows {
-            let score = matchScore(targetWindow: targetWindow, axWindow: axWindow)
-            if score > (best?.score ?? 0) {
-                best = (axWindow, score)
+            let details = matchDetails(targetWindow: targetWindow, axWindow: axWindow)
+            if details.score > (best?.score ?? 0) {
+                best = details
             }
         }
 
         guard let best, best.score >= 28 else { return nil }
-        return best.window
+        if best.hasIdentityEvidence || axWindows.count == 1 {
+            return best.window
+        }
+
+        if hasUsefulTargetTitle(targetWindow) {
+            DWLog("Rejecting geometry-only AX match for '\(targetWindow.title)' because multiple windows are available")
+            return nil
+        }
+
+        return best.score >= 50 ? best.window : nil
     }
 
-    private func matchScore(targetWindow: WindowInfo, axWindow: AXUIElement) -> Int {
-        var score = 0
+    private func matchDetails(targetWindow: WindowInfo, axWindow: AXUIElement) -> MatchDetails {
+        var titleScore = 0
+        var windowIDScore = 0
+        var geometryScore = 0
 
         let axTitle = (attribute(axWindow, kAXTitleAttribute) as String?)?.trimmingCharacters(in: .whitespacesAndNewlines)
         if let axTitle, !axTitle.isEmpty {
-            let normalizedAXTitle = normalize(axTitle)
-            let normalizedCGTitle = normalize(targetWindow.title)
-            if normalizedAXTitle == normalizedCGTitle {
-                score += 80
-            } else if normalizedAXTitle.contains(normalizedCGTitle) || normalizedCGTitle.contains(normalizedAXTitle) {
-                score += 35
-            }
+            titleScore = titleMatchScore(
+                targetTitle: targetWindow.title,
+                axTitle: axTitle,
+                ownerName: targetWindow.ownerName
+            )
+        }
+
+        if let axWindowID = windowID(of: axWindow),
+           axWindowID == targetWindow.windowID {
+            windowIDScore = 160
         }
 
         if let axFrame = frame(of: axWindow) {
             if abs(axFrame.width - targetWindow.bounds.width) < 12 {
-                score += 12
+                geometryScore += 12
             }
             if abs(axFrame.height - targetWindow.bounds.height) < 12 {
-                score += 12
+                geometryScore += 12
             }
             if abs(axFrame.minX - targetWindow.bounds.minX) < 24 {
-                score += 8
+                geometryScore += 8
             }
             if abs(axFrame.minY - targetWindow.bounds.minY) < 24 || abs(axFrame.maxY - targetWindow.bounds.maxY) < 24 {
-                score += 8
+                geometryScore += 8
             }
         }
 
-        return score
+        return MatchDetails(
+            window: axWindow,
+            score: titleScore + windowIDScore + geometryScore,
+            titleScore: titleScore,
+            windowIDScore: windowIDScore,
+            geometryScore: geometryScore
+        )
     }
 
     private func normalize(_ string: String) -> String {
@@ -249,6 +311,159 @@ final class WindowActivator {
             .lowercased()
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .replacingOccurrences(of: " ", with: "")
+    }
+
+    private func hasUsefulTargetTitle(_ targetWindow: WindowInfo) -> Bool {
+        let normalizedTitle = normalize(targetWindow.title)
+        guard !normalizedTitle.isEmpty else { return false }
+        return normalizedTitle != normalize(targetWindow.ownerName)
+    }
+
+    private func titleMatchScore(targetTitle: String, axTitle: String, ownerName: String) -> Int {
+        let normalizedAXTitle = normalize(axTitle)
+        let normalizedTargetTitle = normalize(targetTitle)
+        guard !normalizedTargetTitle.isEmpty, normalizedTargetTitle != normalize(ownerName) else {
+            return 0
+        }
+
+        if normalizedAXTitle == normalizedTargetTitle {
+            return 120
+        }
+
+        if normalizedAXTitle.contains(normalizedTargetTitle) || normalizedTargetTitle.contains(normalizedAXTitle) {
+            return 80
+        }
+
+        if ellipsisTitleMatch(shortTitle: normalizedTargetTitle, fullTitle: normalizedAXTitle) {
+            return 72
+        }
+
+        let fuzzyScore = fuzzyTitleScore(targetTitle: targetTitle, axTitle: axTitle)
+        return fuzzyScore
+    }
+
+    private func ellipsisTitleMatch(shortTitle: String, fullTitle: String) -> Bool {
+        let separators = ["…", "..."]
+        var parts = [shortTitle]
+        for separator in separators where shortTitle.contains(separator) {
+            parts = shortTitle
+                .components(separatedBy: separator)
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { $0.count >= 2 }
+            break
+        }
+
+        guard parts.count >= 2 else { return false }
+
+        var searchStart = fullTitle.startIndex
+        for part in parts {
+            guard let range = fullTitle.range(of: part, range: searchStart..<fullTitle.endIndex) else {
+                return false
+            }
+            searchStart = range.upperBound
+        }
+
+        return true
+    }
+
+    private func fuzzyTitleScore(targetTitle: String, axTitle: String) -> Int {
+        let targetTokens = titleTokens(targetTitle).filter { $0.count >= 3 }
+        let axTokens = titleTokens(axTitle)
+        guard !targetTokens.isEmpty, !axTokens.isEmpty else {
+            return 0
+        }
+
+        let matchedCount = targetTokens.reduce(0) { count, token in
+            let matched = axTokens.contains { axToken in
+                tokenMatches(token, axToken)
+            }
+            return count + (matched ? 1 : 0)
+        }
+
+        if targetTokens.count == 1 {
+            return matchedCount == 1 ? 45 : 0
+        }
+
+        let ratio = Double(matchedCount) / Double(targetTokens.count)
+        if matchedCount >= 4, ratio >= 0.50 {
+            return 65
+        }
+
+        if matchedCount >= 2, ratio >= 0.45 {
+            return 45
+        }
+
+        return 0
+    }
+
+    private func titleTokens(_ string: String) -> [String] {
+        var tokens: [String] = []
+        var current = ""
+        let separators = CharacterSet.whitespacesAndNewlines
+            .union(.punctuationCharacters)
+            .union(.symbols)
+
+        for scalar in string.lowercased().unicodeScalars {
+            if separators.contains(scalar) {
+                if !current.isEmpty {
+                    tokens.append(current)
+                    current.removeAll(keepingCapacity: true)
+                }
+            } else {
+                current.unicodeScalars.append(scalar)
+            }
+        }
+
+        if !current.isEmpty {
+            tokens.append(current)
+        }
+
+        return tokens
+    }
+
+    private func tokenMatches(_ left: String, _ right: String) -> Bool {
+        if left == right {
+            return true
+        }
+
+        if left.count >= 4, right.hasPrefix(left) {
+            return true
+        }
+
+        if right.count >= 4, left.hasPrefix(right) {
+            return true
+        }
+
+        if left.count >= 5, right.contains(left) {
+            return true
+        }
+
+        if right.count >= 5, left.contains(right) {
+            return true
+        }
+
+        return false
+    }
+
+    private func windowID(of axWindow: AXUIElement) -> CGWindowID? {
+        for attributeName in AXAttributeNames.possibleWindowIDs {
+            var value: CFTypeRef?
+            let error = AXUIElementCopyAttributeValue(axWindow, attributeName as CFString, &value)
+            guard error == .success, let value else {
+                continue
+            }
+
+            if let number = value as? NSNumber {
+                return CGWindowID(number.uint32Value)
+            }
+
+            if let string = value as? String,
+               let number = UInt32(string) {
+                return CGWindowID(number)
+            }
+        }
+
+        return nil
     }
 
     private func attribute<T>(_ element: AXUIElement, _ attribute: String) -> T? {

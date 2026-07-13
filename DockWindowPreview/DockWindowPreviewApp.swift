@@ -108,6 +108,7 @@ final class DockWindowPreviewApp: NSObject, NSApplicationDelegate {
         mouseTracker.start()
         optionTabSwitcher.start()
         scheduleStartupUpdateCheck()
+        showSettingsForPreviewIfRequested()
         DWLog("\(AppBranding.displayName) launched")
     }
 
@@ -403,6 +404,19 @@ final class DockWindowPreviewApp: NSObject, NSApplicationDelegate {
             )
         }
         settingsWindowController?.show(requestPermissions: requestPermissions)
+    }
+
+    private func showSettingsForPreviewIfRequested() {
+        guard ProcessInfo.processInfo.environment["Y_SETTINGS_PREVIEW"] == "1" else {
+            return
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
+            self?.showSettingsWindow(requestPermissions: false)
+            if let identifier = ProcessInfo.processInfo.environment["Y_SETTINGS_PREVIEW_SECTION"] {
+                self?.settingsWindowController?.selectItem(identifier)
+            }
+        }
     }
 
     private func scheduleStartupUpdateCheck() {

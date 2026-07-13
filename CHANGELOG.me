@@ -4,11 +4,32 @@
 
 不要在这里记录 token、证书密码、Apple ID、notary 密码等敏感信息。
 
+## 2026-07-13
+
+- 新增项目级 `AGENTS.md`，继承 Y-Project 根规范，并记录 Y-Dock 的仓库、分支、Xcode 版本字段、DMG 命名和本机安装验证要求。
+- 将“每次修改任务必须发布新版本”设为强制完成条件：签名、公证并 staple DMG，发布 GitHub Release，再从最终 DMG 覆盖安装本机 App。
+- 修复 Edge/Chromium 多窗口激活不稳定问题：当 CGWindow 标题被省略号截断、AXWindow 标题为完整浏览器标题时，使用省略号通配和 token fuzzy matching 识别目标窗口。
+- 避免复用只有几何尺寸命中的旧 AXWindow 缓存，降低两个浏览器窗口同位置同尺寸时选错窗口的概率。
+- 强化窗口激活顺序：对目标 AXWindow 重复执行 frontmost、raise、focusedWindow、main 和 focused 设置，提升无痕窗口等同 App 多窗口置前稳定性。
+- 重新确认 `Y-Framework/Setting/YSettingsFramework.swift` 已加入 target Sources，并移除对未跟踪旧 `SettingsComponents.swift` 的 target 依赖。
+- 准备发布 `v1.1.10`，版本号更新为 `MARKETING_VERSION=1.1.10`、`CURRENT_PROJECT_VERSION=35`，并同步更新 README 和 `CHANGELOG.md`。
+- 发布 `v1.1.10` 的签名、公证、staple 后 DMG，SHA256：`59f415e321c704378410e91aeb216bee3df4e85ccd9975756fd337bb9327b063`。
+
+## 2026-07-10
+
+- 将 GitHub 仓库从 `Rainchen537/DockWindowPreview` 重命名为 `Rainchen537/Y-Dock`。
+- 同步更新本地 `origin`、README 仓库记录与发布链接、项目主页链接及 GitHub Release 自动更新接口。
+
 ## 2026-06-28
 
 - 接入 `Y-Framework/Setting/YSettingsFramework.swift` 共享设置页面框架，并加入 Xcode target Sources。
 - 在仓库内 vendored `Y-Framework/Setting/YSettingsFramework.swift`，避免单独 clone GitHub 仓库时缺少父级共享框架。
 - 将原菜单栏 popover 设置页重构为独立设置窗口，采用左侧 sidebar + 右侧内容区结构。
+- 将设置页 sidebar 统一为 `通用 / 功能 / 权限 / 更新 / 关于`，把预览参数、系统和权限等旧分类收敛到右侧 section card。
+- 调整共享设置框架窗口比例、sidebar 宽度、内容内边距和卡片等宽约束；通过截图检查 Y-Dock 权限页按钮行没有横向溢出。
+- 将共享设置窗口默认尺寸放大到 `1200 x 810`，并把左侧导航按钮改为居中排列。
+- 修正 sidebar 内 App 信息区和导航区的居中方式，改为直接按 sidebar 中心线约束；移除设置页页面标题和 section card 内的静态解释性小灰字。
+- 将 sidebar App 信息区顶部间距调为 96，让 logo 保持在左侧上半部分。
 - 将菜单栏入口改为简单菜单：打开设置、更多 Y-Project 占位和退出项。
 - 保留原有预览参数、系统、权限和关于/更新业务逻辑。
 - 移除旧的本地 `SettingsComponents.swift`，避免和共享设置框架形成两套组件体系。

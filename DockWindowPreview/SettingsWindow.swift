@@ -24,17 +24,12 @@ final class SettingsWindowController: NSObject {
             version: "v\(updateChecker.currentVersion)",
             icon: AppIconFactory.appIcon(size: 78)
         )
-        let items = [
-            YSettingSidebarItem("preview", title: "预览", symbolName: "rectangle.3.group"),
-            YSettingSidebarItem("system", title: "系统", symbolName: "power"),
-            YSettingSidebarItem("permissions", title: "权限", symbolName: "lock.shield"),
-            YSettingSidebarItem("about", title: "关于", symbolName: "info.circle")
-        ]
+        let items = YSettingStandardSidebar.all
         let contentController = contentController
         windowController = YSettingWindowController(
             descriptor: descriptor,
             sidebarItems: items,
-            initialIdentifier: "preview"
+            initialIdentifier: "general"
         ) { identifier in
             contentController.makeContent(for: identifier)
         }
@@ -63,6 +58,10 @@ final class SettingsWindowController: NSObject {
 
     func close() {
         windowController.close()
+    }
+
+    func selectItem(_ identifier: String) {
+        windowController.selectItem(identifier)
     }
 }
 
@@ -119,14 +118,16 @@ private final class SettingsContentController {
 
     func makeContent(for identifier: String) -> NSView {
         switch identifier {
-        case "system":
-            return systemContent()
+        case "features":
+            return featuresContent()
         case "permissions":
             return permissionsContent()
+        case "updates":
+            return updatesContent()
         case "about":
             return aboutContent()
         default:
-            return previewContent()
+            return generalContent()
         }
     }
 
@@ -156,37 +157,14 @@ private final class SettingsContentController {
         }
     }
 
-    private func previewContent() -> NSView {
+    private func generalContent() -> NSView {
         let stack = YSettingUI.makeContentStack(
-            title: "预览",
-            symbolName: "rectangle.3.group",
-            subtitle: "设置 Dock 悬浮预览和窗口缩略图的响应方式。"
+            title: "通用",
+            symbolName: "gearshape"
         )
 
         stack.addArrangedSubview(YSettingSectionView(
-            title: "Dock 悬浮预览",
-            symbolName: "dock.rectangle",
-            views: [
-                YSettingUI.sliderRow(title: "悬停延迟", slider: hoverDelaySlider, valueView: hoverDelayValuePill),
-                YSettingUI.sliderRow(title: "缩略图高度", slider: thumbnailSlider, valueView: thumbnailValuePill),
-                YSettingUI.divider(),
-                YSettingUI.row(title: "显示窗口标题", trailingView: showTitleSwitch),
-                YSettingUI.row(title: "启用调试日志", trailingView: debugSwitch)
-            ]
-        ))
-
-        return stack
-    }
-
-    private func systemContent() -> NSView {
-        let stack = YSettingUI.makeContentStack(
-            title: "系统",
-            symbolName: "power",
-            subtitle: "控制开机启动和全局窗口切换入口。"
-        )
-
-        stack.addArrangedSubview(YSettingSectionView(
-            title: "后台运行",
+            title: "启动与快捷键",
             symbolName: "menubar.rectangle",
             views: [
                 statusSwitchActionRow(
@@ -196,7 +174,46 @@ private final class SettingsContentController {
                     actionButton: openLoginItemsButton
                 ),
                 YSettingUI.divider(),
-                statusRow(title: "窗口切换", statusPill: nil, trailingView: optionTabShortcutPill)
+                statusRow(title: "窗口切换", statusPill: nil, trailingView: optionTabShortcutPill),
+                YSettingUI.row(title: "启用调试日志", trailingView: debugSwitch)
+            ]
+        ))
+
+        return stack
+    }
+
+    private func featuresContent() -> NSView {
+        let stack = YSettingUI.makeContentStack(
+            title: "功能",
+            symbolName: "slider.horizontal.3"
+        )
+
+        stack.addArrangedSubview(YSettingSectionView(
+            title: "Dock 悬浮预览",
+            symbolName: "dock.rectangle",
+            views: [
+                YSettingUI.sliderRow(title: "悬停延迟", slider: hoverDelaySlider, valueView: hoverDelayValuePill),
+                YSettingUI.sliderRow(title: "缩略图高度", slider: thumbnailSlider, valueView: thumbnailValuePill),
+                YSettingUI.divider(),
+                YSettingUI.row(title: "显示窗口标题", trailingView: showTitleSwitch)
+            ]
+        ))
+
+        return stack
+    }
+
+    private func updatesContent() -> NSView {
+        let stack = YSettingUI.makeContentStack(
+            title: "更新",
+            symbolName: "arrow.triangle.2.circlepath"
+        )
+
+        stack.addArrangedSubview(YSettingSectionView(
+            title: "版本更新",
+            symbolName: "sparkles",
+            views: [
+                statusRow(title: "当前版本", statusPill: updateStatusPill, trailingView: checkUpdatesButton),
+                statusRow(title: "发布渠道", statusPill: nil, trailingView: YSettingPill(text: "GitHub Release", tone: .accent))
             ]
         ))
 
@@ -206,11 +223,8 @@ private final class SettingsContentController {
     private func permissionsContent() -> NSView {
         let stack = YSettingUI.makeContentStack(
             title: "权限",
-            symbolName: "lock.shield",
-            subtitle: "Y-Dock 使用公开 API，需要系统授权才能读取 Dock 和窗口缩略图。"
+            symbolName: "lock.shield"
         )
-
-        let hint = YSettingUI.secondaryLabel("辅助功能用于读取 Dock、恢复最小化窗口和聚焦指定窗口；屏幕录制用于生成其他 App 的窗口缩略图。开启屏幕录制后通常需要重启 App。")
 
         stack.addArrangedSubview(YSettingSectionView(
             title: "隐私权限",
@@ -228,8 +242,7 @@ private final class SettingsContentController {
                     requestButton: requestScreenCaptureButton,
                     openButton: openScreenCaptureButton
                 ),
-                actionRow(primary: requestAllButton, secondary: recheckButton),
-                hint
+                actionRow(primary: requestAllButton, secondary: recheckButton)
             ]
         ))
 
@@ -239,15 +252,13 @@ private final class SettingsContentController {
     private func aboutContent() -> NSView {
         let stack = YSettingUI.makeContentStack(
             title: "关于",
-            symbolName: "info.circle",
-            subtitle: "版本、更新和项目主页。"
+            symbolName: "info.circle"
         )
 
         stack.addArrangedSubview(YSettingSectionView(
-            title: "版本",
-            symbolName: "sparkles",
+            title: "Y-Project",
+            symbolName: "app.connected.to.app.below.fill",
             views: [
-                statusRow(title: "当前版本", statusPill: updateStatusPill, trailingView: checkUpdatesButton),
                 statusRow(title: "项目主页", statusPill: nil, trailingView: githubButton)
             ]
         ))

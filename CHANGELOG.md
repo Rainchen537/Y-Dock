@@ -2,6 +2,13 @@
 
 All notable Y-Dock release changes are tracked here.
 
+## v1.1.10 - 2026-07-13
+
+- Fixed Edge/Chromium multi-window activation when CGWindow titles are truncated with ellipses but AXWindow titles are full browser titles.
+- Avoided reusing stale geometry-only AX window cache entries, which could focus the previous browser window when two windows share the same frame.
+- Strengthened the Accessibility focus sequence with repeated raise/focused-window/main-window updates for stubborn same-app windows.
+- Ensured the shared Y-Project settings framework remains in the Xcode target sources.
+
 ## v1.1.9 - 2026-06-28
 
 - Reworked settings from the menu bar popover into an independent sidebar settings window using the shared Y-Project settings shell.

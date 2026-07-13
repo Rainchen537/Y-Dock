@@ -1,6 +1,6 @@
 # Y-Dock AI_CONTEXT
 
-本文件是 Y-Dock 的项目级 AI 维护说明。先阅读根目录的 `../Y_PROJECT_APP_STANDARD.me`，再阅读本文件、`CHANGELOG.me`、`CHANGELOG.md` 和 `README.md`。
+本文件是 Y-Dock 的项目级 AI 维护说明。先阅读根目录和本项目的 `AGENTS.md`、`../Y_PROJECT_APP_STANDARD.me`，再阅读本文件、`CHANGELOG.me`、`CHANGELOG.md` 和 `README.md`。
 
 ## 通用规范
 
@@ -8,6 +8,7 @@
 - 每次功能、修复、发布或发布事故处理后，追加更新到 `CHANGELOG.me`。
 - 用户可见 release 必须同步更新 `CHANGELOG.md` 和 GitHub Release。
 - 发布 DMG 必须签名、公证、staple，并在本机安装验证。
+- 每次修改本仓库的任务都必须发布新版本并从最终 DMG 覆盖安装本机 App；只有用户明确要求不发布时才可跳过。
 - 优先通过 GitHub MCP / GitHub App 创建 GitHub Release 和上传 DMG；不可用时再用 `gh` CLI 或 GitHub Releases REST API。
 
 ## Product Summary
@@ -104,7 +105,7 @@ Check the built app:
 8. Package a signed, notarized, and stapled DMG.
 9. Commit, tag, push.
 10. Create a GitHub Release through GitHub MCP / GitHub App and upload the DMG.
-11. Optionally install the new app into `/Applications` for local verification; for release-grade changes, local install verification is expected.
+11. Install the app from the final signed, notarized, and stapled DMG into `/Applications`, overwrite the old version, relaunch it, and complete local verification. This step is mandatory.
 
 Packaging can be run through:
 
