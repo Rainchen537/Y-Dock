@@ -19,7 +19,8 @@
 - `release.sh` 现在强制构建 Debug 和 Release，并只清理本次调用创建的临时 DerivedData、stage 和挂载目录，不再删除其他流程可能创建的 `DebugDerivedData` / `VerifyDerivedData`。
 - 新增项目级 `CLAUDE.md`，继续由 `AGENTS.md` 统一维护发布和本机验收要求。
 - 准备发布 `v1.1.12`，版本号为 `MARKETING_VERSION=1.1.12`、`CURRENT_PROJECT_VERSION=37`，公开 changelog 日期为 `2026-07-18`。
-- 最终 Release URL、DMG SHA256，以及从最终 DMG 覆盖安装 `/Applications/Y-Dock.app` 后的验证结果，将在发布完成后追加；当前不预填尚未产生的值。
+- 完成 `v1.1.12` 发布闭环：源码提交 `b5c6c0bd888f9ae3027e2909db2ba22f0d51def8`、tag `v1.1.12`、Release `https://github.com/Rainchen537/Y-Dock/releases/tag/v1.1.12`；最终 `Y-Dock-v1.1.12.dmg` SHA256 为 `ec476ac089900e12f0e9cb145dfd65abb6563935bed36c15c4cfaf715e6723fc`，GitHub asset digest 已核对一致。
+- 从上述最终 DMG 覆盖安装到 `/Applications/Y-Dock.app` 并通过 LaunchServices 启动；确认版本 `1.1.12 (37)`、Bundle ID `com.lixingchen.DockWindowPreview`、Developer ID 团队 `A94225N8T5`、hardened runtime、严格 codesign、DMG stapler 与 App/DMG Gatekeeper 验证通过。安装版权限页截图确认“正式安装版”、辅助功能和屏幕录制均“已开启”，且只运行一个 `Y-Dock` 进程。
 
 ## 2026-07-13
 
