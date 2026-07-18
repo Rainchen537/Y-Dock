@@ -45,6 +45,8 @@ final class UpdateChecker {
         case missingReleaseURL
         case missingDownloadURL
         case invalidBundleLocation
+        case invalidUpdateApplication
+        case cannotMountUpdate
         case cannotPrepareInstaller
         case cannotStartInstaller
 
@@ -59,7 +61,11 @@ final class UpdateChecker {
             case .missingDownloadURL:
                 return "最新版本没有可直接安装的 DMG。"
             case .invalidBundleLocation:
-                return "无法识别当前 App 的安装位置。"
+                return "自动更新只支持 /Applications/Y-Dock.app。请先安装正式发布版，避免权限记录绑定到开发副本。"
+            case .invalidUpdateApplication:
+                return "下载的更新未通过 Y-Dock 的应用身份、代码签名或 Gatekeeper 校验。"
+            case .cannotMountUpdate:
+                return "无法挂载下载的 Y-Dock 更新。"
             case .cannotPrepareInstaller:
                 return "无法准备自动安装脚本。"
             case .cannotStartInstaller:
@@ -93,6 +99,9 @@ final class UpdateChecker {
     }
 
     private let latestReleaseURL = URL(string: "https://api.github.com/repos/Rainchen537/Y-Dock/releases/latest")!
+    private let installedApplicationPath = "/Applications/Y-Dock.app"
+    private let expectedBundleIdentifier = "com.lixingchen.DockWindowPreview"
+    private let expectedTeamIdentifier = "A94225N8T5"
     private let decoder = JSONDecoder()
 
     var currentVersion: String {
@@ -208,6 +217,18 @@ final class UpdateChecker {
 
                 let workDirectory = FileManager.default.temporaryDirectory
                     .appendingPathComponent("Y-Dock-update-\(UUID().uuidString)", isDirectory: true)
+                let mountURL = workDirectory.appendingPathComponent("mount", isDirectory: true)
+                var installerOwnsWorkDirectory = false
+                var updateIsMounted = false
+                defer {
+                    if !installerOwnsWorkDirectory {
+                        if updateIsMounted {
+                            detachMountedVolume(at: mountURL)
+                        }
+                        try? FileManager.default.removeItem(at: workDirectory)
+                    }
+                }
+
                 try FileManager.default.createDirectory(at: workDirectory, withIntermediateDirectories: true)
 
                 let dmgURL = workDirectory.appendingPathComponent("Y-Dock-\(release.displayVersion).dmg")
@@ -218,11 +239,16 @@ final class UpdateChecker {
                 try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: scriptURL.path)
 
                 let destinationURL = try installationDestinationURL()
+                let sourceURL = try prepareMountedUpdateApplication(dmgURL: dmgURL, mountURL: mountURL)
+                updateIsMounted = true
                 try launchInstaller(
                     scriptURL: scriptURL,
                     dmgURL: dmgURL,
+                    sourceURL: sourceURL,
+                    mountURL: mountURL,
                     destinationURL: destinationURL
                 )
+                installerOwnsWorkDirectory = true
 
                 DispatchQueue.main.async {
                     statusHandler(.relaunching)
@@ -272,19 +298,130 @@ final class UpdateChecker {
     }
 
     private func installationDestinationURL() throws -> URL {
-        let bundleURL = Bundle.main.bundleURL
-        guard bundleURL.pathExtension == "app" else {
+        let installedURL = URL(fileURLWithPath: installedApplicationPath, isDirectory: true)
+            .standardizedFileURL
+        let runningURL = Bundle.main.bundleURL.standardizedFileURL
+        let resourceValues = try? installedURL.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
+        guard
+            runningURL == installedURL,
+            resourceValues?.isDirectory == true,
+            resourceValues?.isSymbolicLink != true,
+            YSettingRuntimeIdentity.isSignedInstalledCopy(
+                expectedPath: installedURL.path,
+                expectedTeamIdentifier: expectedTeamIdentifier,
+                expectedBundleIdentifier: expectedBundleIdentifier
+            )
+        else {
             throw UpdateError.invalidBundleLocation
         }
-        return bundleURL.resolvingSymlinksInPath()
+        return installedURL
     }
 
-    private func launchInstaller(scriptURL: URL, dmgURL: URL, destinationURL: URL) throws {
+    private func prepareMountedUpdateApplication(dmgURL: URL, mountURL: URL) throws -> URL {
+        try runCheckedProcess(
+            executableURL: URL(fileURLWithPath: "/usr/sbin/spctl"),
+            arguments: ["-a", "-vvv", "-t", "open", "--context", "context:primary-signature", dmgURL.path],
+            failure: .invalidUpdateApplication
+        )
+        try FileManager.default.createDirectory(at: mountURL, withIntermediateDirectories: true)
+
+        var isMounted = false
+        do {
+            try runCheckedProcess(
+                executableURL: URL(fileURLWithPath: "/usr/bin/hdiutil"),
+                arguments: ["attach", dmgURL.path, "-mountpoint", mountURL.path, "-nobrowse", "-readonly", "-noautoopen", "-quiet"],
+                failure: .cannotMountUpdate
+            )
+            isMounted = true
+
+            let sourceURL = mountURL.appendingPathComponent("Y-Dock.app", isDirectory: true)
+            let resourceValues = try? sourceURL.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
+            guard
+                sourceURL.deletingLastPathComponent().standardizedFileURL == mountURL.standardizedFileURL,
+                resourceValues?.isDirectory == true,
+                resourceValues?.isSymbolicLink != true
+            else {
+                throw UpdateError.invalidUpdateApplication
+            }
+
+            try runCheckedProcess(
+                executableURL: URL(fileURLWithPath: "/usr/bin/codesign"),
+                arguments: ["--verify", "--deep", "--strict", "--verbose=2", sourceURL.path],
+                failure: .invalidUpdateApplication
+            )
+            try runCheckedProcess(
+                executableURL: URL(fileURLWithPath: "/usr/sbin/spctl"),
+                arguments: ["-a", "-vvv", "-t", "exec", sourceURL.path],
+                failure: .invalidUpdateApplication
+            )
+            guard YSettingRuntimeIdentity.isValidSignedApplication(
+                atPath: sourceURL.path,
+                expectedBundleIdentifier: expectedBundleIdentifier,
+                expectedTeamIdentifier: expectedTeamIdentifier
+            ) else {
+                throw UpdateError.invalidUpdateApplication
+            }
+
+            return sourceURL
+        } catch {
+            if isMounted {
+                detachMountedVolume(at: mountURL)
+            }
+            throw error
+        }
+    }
+
+    private func runCheckedProcess(
+        executableURL: URL,
+        arguments: [String],
+        failure: UpdateError
+    ) throws {
+        let process = Process()
+        process.executableURL = executableURL
+        process.arguments = arguments
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+        } catch {
+            throw failure
+        }
+
+        guard process.terminationStatus == 0 else {
+            throw failure
+        }
+    }
+
+    private func detachMountedVolume(at mountURL: URL) {
+        if (try? runCheckedProcess(
+            executableURL: URL(fileURLWithPath: "/usr/bin/hdiutil"),
+            arguments: ["detach", mountURL.path, "-quiet"],
+            failure: .cannotMountUpdate
+        )) == nil {
+            try? runCheckedProcess(
+                executableURL: URL(fileURLWithPath: "/usr/bin/hdiutil"),
+                arguments: ["detach", mountURL.path, "-force", "-quiet"],
+                failure: .cannotMountUpdate
+            )
+        }
+    }
+
+    private func launchInstaller(
+        scriptURL: URL,
+        dmgURL: URL,
+        sourceURL: URL,
+        mountURL: URL,
+        destinationURL: URL
+    ) throws {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/zsh")
         process.arguments = [
             scriptURL.path,
             dmgURL.path,
+            sourceURL.path,
+            mountURL.path,
             destinationURL.path,
             "\(ProcessInfo.processInfo.processIdentifier)"
         ]
@@ -302,13 +439,14 @@ final class UpdateChecker {
         set -euo pipefail
 
         DMG="$1"
-        DEST="$2"
-        APP_PID="$3"
-        MOUNT="$(/usr/bin/mktemp -d /tmp/Y-Dock-update-mount.XXXXXX)"
+        SRC="$2"
+        MOUNT="$3"
+        DEST="$4"
+        APP_PID="$5"
 
         cleanup() {
-          /usr/bin/hdiutil detach "$MOUNT" -quiet >/dev/null 2>&1 || true
-          /bin/rm -rf "$MOUNT"
+          /usr/bin/hdiutil detach "$MOUNT" -quiet >/dev/null 2>&1 || \\
+            /usr/bin/hdiutil detach "$MOUNT" -force -quiet >/dev/null 2>&1 || true
           /bin/rm -rf "$(/usr/bin/dirname "$DMG")"
         }
         trap cleanup EXIT
@@ -318,11 +456,9 @@ final class UpdateChecker {
         done
 
         /usr/sbin/spctl -a -vvv -t open --context context:primary-signature "$DMG"
-        /usr/bin/hdiutil attach "$DMG" -mountpoint "$MOUNT" -nobrowse -readonly -quiet
 
-        SRC="$MOUNT/Y-Dock.app"
-        if [ ! -d "$SRC" ]; then
-          echo "Y-Dock.app not found in update DMG" >&2
+        if [[ "$SRC" != "$MOUNT/Y-Dock.app" || ! -d "$SRC" || -L "$SRC" ]]; then
+          echo "Y-Dock.app not found as a regular app bundle in update DMG" >&2
           exit 1
         fi
 

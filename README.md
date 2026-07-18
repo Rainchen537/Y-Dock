@@ -13,7 +13,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Rainchen537/Y-Dock/releases/tag/v1.1.11">
+  <a href="https://github.com/Rainchen537/Y-Dock/releases/tag/v1.1.12">
     <img alt="Release" src="https://img.shields.io/github/v/release/Rainchen537/Y-Dock?style=for-the-badge&color=1f8fff">
   </a>
   <img alt="macOS" src="https://img.shields.io/badge/macOS-13%2B-111827?style=for-the-badge&logo=apple">
@@ -23,7 +23,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Rainchen537/Y-Dock/releases/download/v1.1.11/Y-Dock-v1.1.11.dmg">
+  <a href="https://github.com/Rainchen537/Y-Dock/releases/download/v1.1.12/Y-Dock-v1.1.12.dmg">
     <img alt="Download DMG" src="https://img.shields.io/badge/Download-DMG-2563EB?style=for-the-badge&logo=github">
   </a>
 </p>
@@ -45,13 +45,15 @@
 | 🎚 卡片窗口控制 | hover 某个窗口卡片，左上角显示退出 App、关闭窗口、最小化窗口三颗控制按钮。 |
 | 🎯 临时聚焦预览 | hover 卡片超过 `50ms` 后，用轻量覆盖层突出当前窗口快照，不改变真实桌面状态。 |
 | 🎛 设置窗口 | 独立设置窗口采用左侧栏和右侧内容区，可调整悬停延迟、缩略图高度、标题显示、开机启动和调试日志。 |
-| ⬇️ 直接更新 | 检测到新版本后可直接下载、替换并重启，不需要手动拖拽 DMG。 |
+| ⬇️ 直接更新 | 检测到新版本后可直接下载、验证应用身份与签名、替换并重启，不需要手动拖拽 DMG。 |
+| 🛡️ 权限状态诊断 | 权限页区分屏幕录制“未开启 / 需要重启 / 已开启”，并提供对应的请求、重启或安装版切换操作。 |
+| 📍 正式安装版切换 | 区分正式安装版与开发副本，并可切换到签名验证通过的 `/Applications/Y-Dock.app`。 |
 | 🔐 公开 API 实现 | 使用 AppKit、Accessibility、CoreGraphics，不依赖 macOS 私有 API。 |
 
 ## 📦 安装
 
 1. 下载最新版 DMG：  
-   [Y-Dock-v1.1.11.dmg](https://github.com/Rainchen537/Y-Dock/releases/download/v1.1.11/Y-Dock-v1.1.11.dmg)
+   [Y-Dock-v1.1.12.dmg](https://github.com/Rainchen537/Y-Dock/releases/download/v1.1.12/Y-Dock-v1.1.12.dmg)
 2. 打开 DMG。
 3. 将 `Y-Dock.app` 拖到 `Applications`。
 4. 启动 `Y-Dock`，按提示开启权限。
@@ -79,7 +81,9 @@ System Settings
 → Screen & System Audio Recording
 ```
 
-开启屏幕录制权限后，通常需要重启 App 才会生效。
+权限页会把屏幕录制状态明确区分为 **「未开启」**、**「需要重启」** 和 **「已开启」**：初次引导会先调用系统权限请求，再打开对应设置页；仅打开系统设置不会提前显示需要重启。只有系统报告请求已授权、但当前进程预检仍未生效时，正式安装版才会显示 **「重启」**，开发副本会显示 **「切换安装版」**。
+
+权限页也会验证当前副本是否为 `/Applications/Y-Dock.app` 中 Bundle ID 与 Developer ID 团队签名均匹配的正式安装版。开发副本只有在该安装版有效时才允许执行 **「切换安装版」**。**「刷新权限记录」** 只会重置 Y-Dock 自身 Bundle ID 的 Accessibility 与 Screen Capture TCC 记录，不影响其他 App；刷新后需要重新授权并从 `/Applications` 启动正式安装版。
 
 ## 🧭 使用方式
 
@@ -101,6 +105,8 @@ System Settings
 - `显示窗口标题`：控制预览卡片顶部标题栏。
 - `开机启动`：使用 macOS 官方 `SMAppService.mainApp`。
 - `窗口切换`：显示全局快捷键 `Option+Tab`。
+- `权限状态`：分别检查辅助功能和屏幕录制，并在屏幕录制授权需要进程重新载入时提供重启或安装版切换操作。
+- `当前副本`：诊断正式安装版与开发副本，只切换到签名验证通过的 `/Applications/Y-Dock.app`。
 - `调试日志`：输出 `[Y-Dock]` 前缀日志。
 
 ## 🛠 技术栈
@@ -157,4 +163,3 @@ hover 卡片时的“只看当前窗口”效果是公开 API 下的视觉模拟
 - 更稳定的 Dock 图标命中缓存。
 - 多屏幕坐标修正。
 - 更漂亮的动效和 hover 过渡。
-- 自动更新。

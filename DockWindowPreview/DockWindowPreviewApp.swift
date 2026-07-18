@@ -102,7 +102,8 @@ final class DockWindowPreviewApp: NSObject, NSApplicationDelegate {
         setupStatusItem()
         observeApplicationLifecycle()
         let isShowingStartupMenu = showRequestedStartupUIIfNeeded()
-        if !isShowingStartupMenu {
+        let isSettingsPreview = ProcessInfo.processInfo.environment["Y_SETTINGS_PREVIEW"] == "1"
+        if !isShowingStartupMenu && !isSettingsPreview {
             permissionsManager.showInitialPermissionGuidanceIfNeeded()
         }
         mouseTracker.start()
@@ -120,7 +121,7 @@ final class DockWindowPreviewApp: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        openSettingsAndRequestPermissions()
+        openSettingsWindow()
         return true
     }
 
@@ -181,7 +182,7 @@ final class DockWindowPreviewApp: NSObject, NSApplicationDelegate {
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
             NSLog("[\(AppBranding.displayName)] showing settings window")
-            self?.showSettingsWindow(requestPermissions: false)
+            self?.showSettingsWindow()
         }
         return true
     }
@@ -388,14 +389,14 @@ final class DockWindowPreviewApp: NSObject, NSApplicationDelegate {
     }
 
     @objc private func openSettings() {
-        openSettingsAndRequestPermissions()
+        openSettingsWindow()
     }
 
-    private func openSettingsAndRequestPermissions() {
-        showSettingsWindow(requestPermissions: true)
+    private func openSettingsWindow() {
+        showSettingsWindow()
     }
 
-    private func showSettingsWindow(requestPermissions: Bool) {
+    private func showSettingsWindow() {
         if settingsWindowController == nil {
             settingsWindowController = SettingsWindowController(
                 settings: settings,
@@ -403,7 +404,7 @@ final class DockWindowPreviewApp: NSObject, NSApplicationDelegate {
                 updateChecker: updateChecker
             )
         }
-        settingsWindowController?.show(requestPermissions: requestPermissions)
+        settingsWindowController?.show()
     }
 
     private func showSettingsForPreviewIfRequested() {
@@ -412,7 +413,7 @@ final class DockWindowPreviewApp: NSObject, NSApplicationDelegate {
         }
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
-            self?.showSettingsWindow(requestPermissions: false)
+            self?.showSettingsWindow()
             if let identifier = ProcessInfo.processInfo.environment["Y_SETTINGS_PREVIEW_SECTION"] {
                 self?.settingsWindowController?.selectItem(identifier)
             }
@@ -496,9 +497,12 @@ final class DockWindowPreviewApp: NSObject, NSApplicationDelegate {
     }
 
     @objc private func requestScreenCapturePermission() {
-        if permissionsManager.requestScreenCapturePermission() {
-            DWLog("Screen capture permission is already granted or was granted")
-        } else {
+        switch permissionsManager.requestScreenCapturePermission() {
+        case .active:
+            DWLog("Screen capture permission is active")
+        case .restartRequired:
+            DWLog("Screen capture permission was granted and requires restart")
+        case .missing:
             permissionsManager.openScreenCaptureSettings()
         }
     }

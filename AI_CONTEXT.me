@@ -30,6 +30,11 @@ Core behavior:
 - `Option+Tab` should include minimized windows in the initial list when Accessibility is trusted. Avoid title/size-only de-duping for minimized windows because separate browser or document windows often share similar metadata.
 - Uses CoreGraphics window lists and snapshots for thumbnails.
 - Uses Accessibility to raise, focus, minimize, close, restore minimized windows, or terminate the owning app.
+- The permissions page distinguishes the verified signed `/Applications/Y-Dock.app` from development copies and enables switching only when the installed Bundle ID, code signature, and Developer ID team match.
+- Initial permission guidance calls the relevant request API before opening System Settings so fresh installs receive a TCC entry.
+- Screen Recording is modeled as `missing`, `restartRequired`, or `active`; opening System Settings alone stays `missing`, while `restartRequired` is recorded only when `CGRequestScreenCaptureAccess()` reports granted and preflight is still false.
+- Direct updates require the installed destination to be the non-symlink signed `/Applications/Y-Dock.app` with Bundle ID `com.lixingchen.DockWindowPreview` and Developer ID team `A94225N8T5`; the mounted source app must pass the same runtime-identity checks plus generic `codesign` and Gatekeeper validation.
+- Accessibility and Screen Capture TCC refreshes are app-scoped to `com.lixingchen.DockWindowPreview`.
 - Uses public APIs only. macOS does not expose a public Dock hover/window-preview API.
 
 ## Important Files
@@ -44,15 +49,17 @@ Core behavior:
 - `DockWindowPreview/FocusOverlayPanel.swift`: lightweight visual focus overlay for hovered thumbnails.
 - `DockWindowPreview/OptionTabSwitcher.swift`: global `Option+Tab` hotkey, centered switcher panel, and selection lifecycle.
 - `DockWindowPreview/WindowActivator.swift`: AX-based focus, raise, close, minimize, restore.
-- `DockWindowPreview/SettingsWindow.swift`: independent settings window business controller, using `Y-Framework/Setting` for the shared settings shell and controls.
-- `Y-Framework/Setting/YSettingsFramework.swift`: vendored copy of the shared Y-Project settings framework, kept in this repository so GitHub source checkouts build independently.
+- `DockWindowPreview/SettingsWindow.swift`: independent settings window business controller, using `Y-Framework/Setting` for the shared settings shell and controls; it presents runtime-copy diagnostics and the three-state Screen Recording UI.
+- `DockWindowPreview/PermissionsManager.swift`: Accessibility and Screen Recording state, app-scoped TCC refresh, signed installed-copy validation, and restart/switch actions.
+- `DockWindowPreview/UpdateChecker.swift`: GitHub release checks and direct update installation, including signed runtime-identity validation of both the installed destination and mounted source app.
+- `Y-Framework/Setting/YSettingsFramework.swift`: vendored copy of the shared Y-Project settings framework, kept in this repository so GitHub source checkouts build independently; it constrains windows to the active display, validates sidebar identifiers, and verifies installed runtime identity.
 - `DockWindowPreview/AppIcon.icns`: bundled app icon.
 - `assets/readme/logo*.png`: GitHub README logo assets.
 - `README.md`: public project page.
 - `CHANGELOG.md`: user-facing release history.
 - `CHANGELOG.me`: AI/maintenance update log.
 - `AI_MAINTENANCE.me`: legacy AI file kept as a pointer to this file.
-- `release.sh`: Release build, Developer ID signing, notarized/stapled DMG packaging, and Gatekeeper verification.
+- `release.sh`: isolated Debug and Release builds in invocation-owned temporary DerivedData, Developer ID signing, notarized/stapled DMG packaging, and Gatekeeper verification.
 
 ## App Identity
 
@@ -158,6 +165,8 @@ ditto "$STAGE/Y-Dock.app" /Applications/Y-Dock.app
 codesign --verify --deep --strict --verbose=2 /Applications/Y-Dock.app
 open -a /Applications/Y-Dock.app
 ```
+
+After launch, verify the permissions page reports `正式安装版`, distinguishes Screen Recording as missing/restart-required/active, exposes the matching request or restart action, and keeps TCC refresh scoped to the Y-Dock bundle identifier.
 
 Launchpad and Finder can cache app icons for existing bundle identifiers. If the installed icon does not visually refresh immediately, verify the app bundle contains the new `AppIcon.icns`; macOS may update the displayed icon after Dock/Finder cache refresh or reboot.
 

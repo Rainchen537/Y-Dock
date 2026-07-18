@@ -2,6 +2,17 @@
 
 All notable Y-Dock release changes are tracked here.
 
+## v1.1.12 - 2026-07-18
+
+- Constrained the shared settings window to the active display so controls remain reachable on compact or scaled screens.
+- Validated settings preview section identifiers before changing navigation state.
+- Added runtime diagnostics that distinguish the verified signed `/Applications` copy from development copies and can switch directly to the installed app.
+- Split Screen Recording into missing, restart-required, and active states; opening System Settings no longer implies authorization, and restart-required is set only after a granted request still needs process reload.
+- Disabled the development-copy restart/switch action unless a valid signed `/Applications/Y-Dock.app` is available.
+- Scoped Accessibility and Screen Capture TCC refreshes to Y-Dock's bundle identifier.
+- Hardened direct updates by rejecting symlinked or wrong-identity app bundles before replacing the installed copy, while retaining code-signing and Gatekeeper checks.
+- Kept the shared Y-Project settings framework as the sole settings component system.
+
 ## v1.1.11 - 2026-07-13
 
 - Fixed the first `Option+Tab` invocation selecting the second card; it now starts on the first card in the displayed list.

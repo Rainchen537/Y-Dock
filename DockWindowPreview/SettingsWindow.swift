@@ -45,15 +45,10 @@ final class SettingsWindowController: NSObject {
         windowController.isVisible
     }
 
-    func show(requestPermissions: Bool = false) {
+    func show() {
         contentController.refreshForPresentation()
         contentController.startPresentation()
         windowController.showAndActivate()
-
-        guard requestPermissions else { return }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
-            self?.contentController.requestMissingPermissions()
-        }
     }
 
     func close() {
@@ -80,6 +75,7 @@ private final class SettingsContentController {
     private let updateStatusPill = YSettingPill(text: "", tone: .neutral)
     private let accessibilityStatusPill = YSettingPill(text: "检测中", tone: .neutral)
     private let screenCaptureStatusPill = YSettingPill(text: "检测中", tone: .neutral)
+    private let runtimeIdentityPill = YSettingPill(text: "检测中", tone: .neutral)
     private let optionTabShortcutPill = YSettingPill(text: "⌥ Tab", tone: .accent)
 
     private lazy var showTitleSwitch = YSettingUI.makeSwitch(target: self, action: #selector(showTitleChanged(_:)))
@@ -92,10 +88,12 @@ private final class SettingsContentController {
     private lazy var openAccessibilityButton = makeButton(title: "打开", symbolName: "gearshape", action: #selector(openAccessibilitySettings))
     private lazy var requestScreenCaptureButton = makeButton(title: "请求", symbolName: "rectangle.on.rectangle", action: #selector(requestScreenCapturePermission))
     private lazy var openScreenCaptureButton = makeButton(title: "打开", symbolName: "gearshape", action: #selector(openScreenCaptureSettings))
+    private lazy var restartForScreenCaptureButton = makeButton(title: "重启", symbolName: "arrow.clockwise", role: .primary, action: #selector(restartForScreenCapture))
+    private lazy var switchToInstalledButton = makeButton(title: "切换到安装版", symbolName: "arrow.right.app", role: .primary, action: #selector(switchToInstalledCopy))
     private lazy var requestAllButton = makeButton(title: "请求缺失权限", symbolName: "lock.open", role: .primary, action: #selector(requestAllPermissions))
+    private lazy var resetPermissionsButton = makeButton(title: "刷新权限记录", symbolName: "arrow.counterclockwise", action: #selector(resetPrivacyPermissions))
     private lazy var recheckButton = makeButton(title: "重新检测", symbolName: "checkmark.shield", action: #selector(recheckPermissions))
 
-    private var permissionRefreshTimer: Timer?
     private var isObservingApplicationActivation = false
 
     init(
@@ -136,7 +134,6 @@ private final class SettingsContentController {
     }
 
     func startPresentation() {
-        startPermissionRefreshTimer()
         if !isObservingApplicationActivation {
             NotificationCenter.default.addObserver(
                 self,
@@ -149,8 +146,6 @@ private final class SettingsContentController {
     }
 
     func stopPresentation() {
-        permissionRefreshTimer?.invalidate()
-        permissionRefreshTimer = nil
         if isObservingApplicationActivation {
             NotificationCenter.default.removeObserver(self, name: NSApplication.didBecomeActiveNotification, object: nil)
             isObservingApplicationActivation = false
@@ -230,19 +225,26 @@ private final class SettingsContentController {
             title: "隐私权限",
             symbolName: "checkmark.shield",
             views: [
+                YSettingUI.row(
+                    title: "当前副本",
+                    trailingView: YSettingUI.horizontal([runtimeIdentityPill, switchToInstalledButton], spacing: 6)
+                ),
                 permissionRow(
                     title: "辅助功能",
                     statusPill: accessibilityStatusPill,
                     requestButton: requestAccessibilityButton,
                     openButton: openAccessibilityButton
                 ),
-                permissionRow(
-                    title: "屏幕录制",
-                    statusPill: screenCaptureStatusPill,
-                    requestButton: requestScreenCaptureButton,
-                    openButton: openScreenCaptureButton
+                YSettingUI.row(title: "屏幕录制", trailingView: screenCaptureStatusPill),
+                YSettingUI.row(
+                    title: "屏幕录制操作",
+                    trailingView: YSettingUI.horizontal([requestScreenCaptureButton, openScreenCaptureButton, restartForScreenCaptureButton], spacing: 6)
                 ),
-                actionRow(primary: requestAllButton, secondary: recheckButton)
+                YSettingUI.row(
+                    title: "权限修复",
+                    trailingView: YSettingUI.horizontal([resetPermissionsButton, recheckButton], spacing: 6)
+                ),
+                actionRow(primary: requestAllButton)
             ]
         ))
 
@@ -259,6 +261,7 @@ private final class SettingsContentController {
             title: "Y-Project",
             symbolName: "app.connected.to.app.below.fill",
             views: [
+                statusRow(title: "产品定位", statusPill: nil, trailingView: YSettingPill(text: "Dock 多窗口预览", tone: .accent)),
                 statusRow(title: "项目主页", statusPill: nil, trailingView: githubButton)
             ]
         ))
@@ -290,8 +293,6 @@ private final class SettingsContentController {
         requestButton: NSButton,
         openButton: NSButton
     ) -> NSView {
-        requestButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 62).isActive = true
-        openButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 62).isActive = true
         let actions = YSettingUI.horizontal([requestButton, openButton], spacing: 6)
         return statusRow(title: title, statusPill: statusPill, trailingView: actions)
     }
@@ -362,21 +363,38 @@ private final class SettingsContentController {
     }
 
     func refreshPermissionStatus() {
+        let isInstalledCopy = permissionsManager.isRunningInstalledCopy()
+        let hasInstalledCopy = permissionsManager.hasValidInstalledApplication()
+        runtimeIdentityPill.setText(isInstalledCopy ? "正式安装版" : "开发副本", tone: isInstalledCopy ? .success : .warning)
+        switchToInstalledButton.isHidden = isInstalledCopy
+        switchToInstalledButton.isEnabled = hasInstalledCopy
+
         let accessibilityTrusted = permissionsManager.isAccessibilityTrusted()
-        accessibilityStatusPill.setText(accessibilityTrusted ? "已开启" : "未开启", tone: accessibilityTrusted ? .success : .warning)
+        if accessibilityTrusted {
+            accessibilityStatusPill.setText("已开启", tone: .success)
+        } else if !isInstalledCopy, hasInstalledCopy {
+            accessibilityStatusPill.setText("当前副本未授权", tone: .warning)
+        } else {
+            accessibilityStatusPill.setText("未开启", tone: .warning)
+        }
         requestAccessibilityButton.isEnabled = !accessibilityTrusted
 
-        let screenCaptureTrusted = permissionsManager.isScreenCaptureTrusted()
-        screenCaptureStatusPill.setText(screenCaptureTrusted ? "已开启" : "未开启", tone: screenCaptureTrusted ? .success : .warning)
-        requestScreenCaptureButton.isEnabled = !screenCaptureTrusted
-        requestAllButton.isEnabled = !accessibilityTrusted || !screenCaptureTrusted
-    }
-
-    private func startPermissionRefreshTimer() {
-        permissionRefreshTimer?.invalidate()
-        permissionRefreshTimer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in
-            self?.refreshPermissionStatus()
+        let screenCaptureState = permissionsManager.screenCapturePermissionState()
+        switch screenCaptureState {
+        case .missing where !isInstalledCopy && hasInstalledCopy:
+            screenCaptureStatusPill.setText("当前副本未授权", tone: .warning)
+        case .missing:
+            screenCaptureStatusPill.setText("未开启", tone: .warning)
+        case .restartRequired:
+            screenCaptureStatusPill.setText("需要重启", tone: .accent)
+        case .active:
+            screenCaptureStatusPill.setText("已开启", tone: .success)
         }
+        requestScreenCaptureButton.isHidden = screenCaptureState != .missing
+        restartForScreenCaptureButton.isHidden = screenCaptureState != .restartRequired
+        restartForScreenCaptureButton.title = isInstalledCopy ? "重启" : "切换安装版"
+        restartForScreenCaptureButton.isEnabled = isInstalledCopy || hasInstalledCopy
+        requestAllButton.isEnabled = !accessibilityTrusted || screenCaptureState == .missing
     }
 
     func requestMissingPermissions() {
@@ -455,6 +473,7 @@ private final class SettingsContentController {
     }
 
     @objc private func recheckPermissions() {
+        refreshLaunchAtLoginStatus()
         refreshPermissionStatus()
     }
 
@@ -472,8 +491,62 @@ private final class SettingsContentController {
         refreshPermissionStatus()
     }
 
+    @objc private func restartForScreenCapture() {
+        permissionsManager.relaunchInstalledApplication()
+    }
+
+    @objc private func switchToInstalledCopy() {
+        permissionsManager.relaunchInstalledApplication()
+    }
+
+    @objc private func resetPrivacyPermissions() {
+        resetPermissionsButton.isEnabled = false
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            do {
+                guard let self else { return }
+                try self.permissionsManager.resetPrivacyPermissions()
+                DispatchQueue.main.async {
+                    self.permissionsManager.didResetPrivacyPermissions()
+                    self.resetPermissionsButton.isEnabled = true
+                    self.refreshPermissionStatus()
+                    self.showPermissionResetAlert()
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    guard let self else { return }
+                    self.resetPermissionsButton.isEnabled = true
+                    let alert = NSAlert(error: error)
+                    alert.messageText = "刷新权限记录失败"
+                    alert.informativeText = error.localizedDescription
+                    alert.runModal()
+                }
+            }
+        }
+    }
+
     @objc private func openScreenCaptureSettings() {
         permissionsManager.openScreenCaptureSettings()
+        refreshPermissionStatus()
+    }
+
+    private func showPermissionResetAlert() {
+        let alert = NSAlert()
+        alert.alertStyle = .informational
+        alert.messageText = "已刷新 Y-Dock 权限记录"
+        alert.informativeText = "请重新开启辅助功能和屏幕录制权限，然后使用“重启”从 /Applications 启动正式安装版。"
+        alert.addButton(withTitle: "打开辅助功能")
+        alert.addButton(withTitle: "打开屏幕录制")
+        alert.addButton(withTitle: "稍后")
+
+        switch alert.runModal() {
+        case .alertFirstButtonReturn:
+            permissionsManager.openAccessibilitySettings()
+        case .alertSecondButtonReturn:
+            permissionsManager.openScreenCaptureSettings()
+            refreshPermissionStatus()
+        default:
+            break
+        }
     }
 
     @objc private func openLoginItemsSettings() {

@@ -1,10 +1,146 @@
 import AppKit
+import Security
 
 struct YSettingAppDescriptor {
     let displayName: String
     let subtitle: String
     let version: String
     let icon: NSImage
+}
+
+enum YSettingRuntimeIdentity {
+    private struct RelaunchError: LocalizedError {
+        let message: String
+
+        var errorDescription: String? {
+            message
+        }
+    }
+
+    private struct SigningInformation {
+        let identifier: String
+        let teamIdentifier: String
+        let certificateSummary: String
+        let flags: UInt32
+    }
+
+    private static let hardenedRuntimeFlag: UInt32 = 0x10000
+
+    static func isSignedInstalledCopy(
+        expectedPath: String,
+        expectedTeamIdentifier: String,
+        expectedBundleIdentifier: String? = Bundle.main.bundleIdentifier
+    ) -> Bool {
+        let runningURL = Bundle.main.bundleURL.standardizedFileURL
+        let expectedURL = URL(fileURLWithPath: expectedPath, isDirectory: true)
+            .standardizedFileURL
+        guard runningURL == expectedURL, let expectedBundleIdentifier else {
+            return false
+        }
+
+        return isValidSignedApplication(
+            atPath: expectedURL.path,
+            expectedBundleIdentifier: expectedBundleIdentifier,
+            expectedTeamIdentifier: expectedTeamIdentifier
+        )
+    }
+
+    static func isValidSignedApplication(
+        atPath path: String,
+        expectedBundleIdentifier: String,
+        expectedTeamIdentifier: String
+    ) -> Bool {
+        let applicationURL = URL(fileURLWithPath: path, isDirectory: true)
+            .standardizedFileURL
+        let resourceValues = try? applicationURL.resourceValues(forKeys: [.isSymbolicLinkKey])
+        guard
+            applicationURL.pathExtension == "app",
+            resourceValues?.isSymbolicLink != true,
+            let bundle = Bundle(url: applicationURL),
+            bundle.bundleIdentifier == expectedBundleIdentifier,
+            let signingInformation = signingInformation(at: applicationURL),
+            signingInformation.identifier == expectedBundleIdentifier,
+            signingInformation.teamIdentifier == expectedTeamIdentifier,
+            signingInformation.certificateSummary.hasPrefix("Developer ID Application:"),
+            signingInformation.certificateSummary.hasSuffix("(\(expectedTeamIdentifier))"),
+            signingInformation.flags & hardenedRuntimeFlag != 0
+        else {
+            return false
+        }
+
+        return true
+    }
+
+    static func relaunchInstalledApplication(
+        atPath path: String,
+        expectedBundleIdentifier: String,
+        expectedTeamIdentifier: String
+    ) throws {
+        guard isValidSignedApplication(
+            atPath: path,
+            expectedBundleIdentifier: expectedBundleIdentifier,
+            expectedTeamIdentifier: expectedTeamIdentifier
+        ) else {
+            throw RelaunchError(message: "找不到有效的正式签名安装版：\(path)")
+        }
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/zsh")
+        process.arguments = [
+            "-c",
+            "while /bin/kill -0 \"$1\" 2>/dev/null; do /bin/sleep 0.1; done; /usr/bin/open -n \"$2\"",
+            "y-project-relaunch",
+            "\(ProcessInfo.processInfo.processIdentifier)",
+            path
+        ]
+
+        do {
+            try process.run()
+            NSApp.terminate(nil)
+        } catch {
+            throw RelaunchError(message: "无法启动正式安装版：\(error.localizedDescription)")
+        }
+    }
+
+    private static func signingInformation(at applicationURL: URL) -> SigningInformation? {
+        var staticCode: SecStaticCode?
+        guard
+            SecStaticCodeCreateWithPath(applicationURL as CFURL, [], &staticCode) == errSecSuccess,
+            let staticCode,
+            SecStaticCodeCheckValidity(
+                staticCode,
+                SecCSFlags(rawValue: kSecCSStrictValidate),
+                nil
+            ) == errSecSuccess
+        else {
+            return nil
+        }
+
+        var information: CFDictionary?
+        guard
+            SecCodeCopySigningInformation(
+                staticCode,
+                SecCSFlags(rawValue: kSecCSSigningInformation),
+                &information
+            ) == errSecSuccess,
+            let dictionary = information as? [CFString: Any],
+            let identifier = dictionary[kSecCodeInfoIdentifier] as? String,
+            let teamIdentifier = dictionary[kSecCodeInfoTeamIdentifier] as? String,
+            let certificates = dictionary[kSecCodeInfoCertificates] as? [SecCertificate],
+            let leafCertificate = certificates.first,
+            let certificateSummary = SecCertificateCopySubjectSummary(leafCertificate) as String?,
+            let flags = dictionary[kSecCodeInfoFlags] as? NSNumber
+        else {
+            return nil
+        }
+
+        return SigningInformation(
+            identifier: identifier,
+            teamIdentifier: teamIdentifier,
+            certificateSummary: certificateSummary,
+            flags: flags.uint32Value
+        )
+    }
 }
 
 struct YSettingSidebarItem {
@@ -256,8 +392,26 @@ final class YSettingWindowController: NSWindowController, NSWindowDelegate {
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
         window.isReleasedWhenClosed = false
-        window.minSize = YSettingUI.minimumWindowSize
-        window.center()
+        if ProcessInfo.processInfo.environment["Y_SETTINGS_PREVIEW"] == "1" {
+            window.sharingType = .readOnly
+        }
+        if let visibleFrame = NSScreen.main?.visibleFrame.insetBy(dx: 20, dy: 20) {
+            var frame = window.frame
+            frame.size.width = min(frame.width, visibleFrame.width)
+            frame.size.height = min(frame.height, visibleFrame.height)
+            frame.origin = NSPoint(
+                x: visibleFrame.midX - frame.width / 2,
+                y: visibleFrame.midY - frame.height / 2
+            )
+            window.setFrame(frame, display: false)
+            window.minSize = NSSize(
+                width: min(YSettingUI.minimumWindowSize.width, frame.width),
+                height: min(YSettingUI.minimumWindowSize.height, frame.height)
+            )
+        } else {
+            window.minSize = YSettingUI.minimumWindowSize
+            window.center()
+        }
         window.appearance = NSAppearance(named: .darkAqua)
         window.contentViewController = rootViewController
 
@@ -278,10 +432,36 @@ final class YSettingWindowController: NSWindowController, NSWindowDelegate {
         NSApp.activate(ignoringOtherApps: true)
         showWindow(nil)
         window?.makeKeyAndOrderFront(nil)
+        capturePreviewIfRequested()
+    }
+
+    private func capturePreviewIfRequested() {
+        guard
+            let outputPath = ProcessInfo.processInfo.environment["Y_SETTINGS_PREVIEW_OUTPUT"],
+            !outputPath.isEmpty
+        else {
+            return
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
+            guard let view = self?.window?.contentView else { return }
+            let bounds = view.bounds
+            guard
+                let representation = view.bitmapImageRepForCachingDisplay(in: bounds)
+            else {
+                return
+            }
+            view.cacheDisplay(in: bounds, to: representation)
+            guard let data = representation.representation(using: .png, properties: [:]) else {
+                return
+            }
+            try? data.write(to: URL(fileURLWithPath: outputPath), options: .atomic)
+        }
     }
 
     func selectItem(_ identifier: String) {
         rootViewController.selectItem(identifier)
+        capturePreviewIfRequested()
     }
 
     func windowWillClose(_ notification: Notification) {
@@ -466,7 +646,7 @@ final class YSettingPill: NSView {
 }
 
 final class YSettingActionButton: NSButton {
-    private let buttonTitle: String
+    private var buttonTitle: String
     private let symbolName: String
     private let role: YSettingButtonRole
     private let titleLabel = NSTextField(labelWithString: "")
@@ -480,7 +660,7 @@ final class YSettingActionButton: NSButton {
         self.role = role
         super.init(frame: .zero)
 
-        self.title = ""
+        super.title = ""
         isBordered = false
         bezelStyle = .regularSquare
         setButtonType(.momentaryPushIn)
@@ -519,6 +699,20 @@ final class YSettingActionButton: NSButton {
 
     required init?(coder: NSCoder) {
         nil
+    }
+
+    override var title: String {
+        get { buttonTitle }
+        set {
+            buttonTitle = newValue
+            super.title = ""
+            titleLabel.stringValue = newValue
+            symbolView.image = NSImage(
+                systemSymbolName: symbolName,
+                accessibilityDescription: newValue
+            )
+            invalidateIntrinsicContentSize()
+        }
     }
 
     override var intrinsicContentSize: NSSize {
@@ -694,6 +888,7 @@ class YSettingHoverTrackingView: NSView {
 private final class YSettingRootViewController: NSViewController {
     private let descriptor: YSettingAppDescriptor
     private let sidebarItems: [YSettingSidebarItem]
+    private let sidebarIdentifiers: Set<String>
     private let contentProvider: YSettingWindowController.ContentProvider
     private var selectedIdentifier: String
     private let sidebarStack = NSStackView()
@@ -709,10 +904,14 @@ private final class YSettingRootViewController: NSViewController {
         initialIdentifier: String?,
         contentProvider: @escaping YSettingWindowController.ContentProvider
     ) {
+        let sidebarIdentifiers = Set(sidebarItems.map { $0.identifier })
         self.descriptor = descriptor
         self.sidebarItems = sidebarItems
+        self.sidebarIdentifiers = sidebarIdentifiers
         self.contentProvider = contentProvider
-        selectedIdentifier = initialIdentifier ?? sidebarItems.first?.identifier ?? ""
+        selectedIdentifier = initialIdentifier.flatMap { sidebarIdentifiers.contains($0) ? $0 : nil }
+            ?? sidebarItems.first?.identifier
+            ?? ""
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -747,6 +946,9 @@ private final class YSettingRootViewController: NSViewController {
     }
 
     func selectItem(_ identifier: String) {
+        guard sidebarIdentifiers.contains(identifier) else {
+            return
+        }
         guard selectedIdentifier != identifier || currentContentView == nil else {
             return
         }

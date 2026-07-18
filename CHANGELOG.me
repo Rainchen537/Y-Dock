@@ -4,6 +4,23 @@
 
 不要在这里记录 token、证书密码、Apple ID、notary 密码等敏感信息。
 
+## 2026-07-18
+
+- 共享设置框架增加屏幕可见区域约束，设置窗口在紧凑、缩放或远程显示环境中不再超出可见区域。
+- 共享设置框架增加 sidebar identifier 校验，未知的设置预览页面不会再产生“无选中项但显示通用页”的不一致状态。
+- 权限页新增运行副本诊断，按 `/Applications/Y-Dock.app` 路径、Bundle ID、代码签名有效性和 Developer ID 团队标识区分“正式安装版”与“开发副本”，并可切换到验证通过的安装版。
+- 屏幕录制权限改为 `missing / restartRequired / active` 三态：未授权时提供请求，授权写入但当前进程尚未生效时显示“需要重启”，正式安装版提供“重启”，开发副本提供“切换安装版”。
+- `Accessibility` 与 `ScreenCapture` 的 TCC 刷新均限定到 `com.lixingchen.DockWindowPreview`，后台执行并带超时处理，不会全局重置其他 App。
+- 清理误恢复且未加入 target 的旧 `SettingsComponents.swift`，继续以 `YSettingsFramework.swift` 作为唯一设置组件体系。
+- 修正屏幕录制引导状态：仅打开 System Settings 不再提前标记“需要重启”；初次引导会先调用对应权限请求 API，且只在 `CGRequestScreenCaptureAccess()` 已返回授权但 preflight 仍为 false 时记录待重启状态。
+- 开发副本处于屏幕录制待重启状态时，只有检测到 Bundle ID、签名和 Developer ID 团队均有效的 `/Applications/Y-Dock.app` 才启用切换操作。
+- 移除 Y-Dock 自己的设置预览截图实现，统一使用共享设置框架提供的截图逻辑。
+- 自动更新在替换前挂载并验证下载 App：拒绝符号链接以及 Bundle ID/Developer ID 团队不匹配的来源，同时保留 DMG/App 的 `spctl` 与 `codesign` 校验；缺失 `/Applications/Y-Dock.app` 时统一返回正式安装路径指引。
+- `release.sh` 现在强制构建 Debug 和 Release，并只清理本次调用创建的临时 DerivedData、stage 和挂载目录，不再删除其他流程可能创建的 `DebugDerivedData` / `VerifyDerivedData`。
+- 新增项目级 `CLAUDE.md`，继续由 `AGENTS.md` 统一维护发布和本机验收要求。
+- 准备发布 `v1.1.12`，版本号为 `MARKETING_VERSION=1.1.12`、`CURRENT_PROJECT_VERSION=37`，公开 changelog 日期为 `2026-07-18`。
+- 最终 Release URL、DMG SHA256，以及从最终 DMG 覆盖安装 `/Applications/Y-Dock.app` 后的验证结果，将在发布完成后追加；当前不预填尚未产生的值。
+
 ## 2026-07-13
 
 - 修复 `Option+Tab` 首次呼出时固定选中第二张卡片的问题，改为从当前展示列表的第一张开始选择。
