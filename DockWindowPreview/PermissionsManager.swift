@@ -20,7 +20,14 @@ final class PermissionsManager {
     }
 
     private let defaults: UserDefaults
-    private let initialGuidanceKey = "didShowInitialPermissionGuidance"
+    private lazy var permissionPromptCoordinator = YPermissionPromptCoordinator(
+        configuration: YPermissionPromptConfiguration(
+            appName: AppBranding.displayName,
+            persistenceNamespace: bundleIdentifier,
+            legacyInitialGuidanceKeys: ["didShowInitialPermissionGuidance"]
+        ),
+        defaults: defaults
+    )
     private let screenCaptureRestartPendingKey = "screenCaptureRestartPending"
     private let installedApplicationPath = "/Applications/Y-Dock.app"
     private let bundleIdentifier = "com.lixingchen.DockWindowPreview"
@@ -73,53 +80,111 @@ final class PermissionsManager {
 
     @discardableResult
     func requestMissingPrivacyPermissions() -> Bool {
-        if !isAccessibilityTrusted() {
-            _ = requestAccessibilityPermission()
-        }
-
-        if screenCapturePermissionState() == .missing {
-            _ = requestScreenCapturePermission()
-        }
-
+        showMissingPermissionGuidance(force: true)
         return isAccessibilityTrusted() && screenCapturePermissionState() == .active
     }
 
     func showInitialPermissionGuidanceIfNeeded() {
-        let hasAccessibility = isAccessibilityTrusted()
-        let screenCaptureState = screenCapturePermissionState()
-        guard !hasAccessibility || screenCaptureState != .active else { return }
-        guard !defaults.bool(forKey: initialGuidanceKey) else { return }
-        defaults.set(true, forKey: initialGuidanceKey)
+        permissionPromptCoordinator.presentInitialGuidanceIfNeeded(
+            permissions: permissionDescriptors,
+            runtime: permissionRuntimeDescriptor
+        )
+    }
 
-        DispatchQueue.main.async {
-            NSApp.activate(ignoringOtherApps: true)
+    func showMissingPermissionGuidance(
+        reason: String? = nil,
+        force: Bool = false
+    ) {
+        permissionPromptCoordinator.presentMissingPermissionIfNeeded(
+            permissions: permissionDescriptors,
+            runtime: permissionRuntimeDescriptor,
+            reason: reason,
+            force: force
+        )
+    }
 
-            let alert = NSAlert()
-            alert.alertStyle = .informational
-            alert.messageText = "\(AppBranding.displayName) 需要权限"
-            alert.informativeText = """
-            请在 System Settings → Privacy & Security 中开启：
+    private var permissionDescriptors: [YPermissionPromptDescriptor] {
+        [
+            YPermissionPromptDescriptor(
+                identifier: "accessibility",
+                displayName: "辅助功能权限",
+                explanation: "用于读取 Dock 项目并聚焦所选窗口。",
+                settingsLocation: "System Settings → Privacy & Security → Accessibility",
+                state: { [weak self] in
+                    self?.isAccessibilityTrusted() == true
+                        ? .granted
+                        : .missing
+                },
+                requestAction: YPermissionPromptAction(
+                    title: "打开辅助功能",
+                    perform: { [weak self] in
+                        guard let self else { return }
+                        _ = self.requestAccessibilityPermission()
+                        self.openAccessibilitySettings()
+                    }
+                ),
+                openSettingsAction: YPermissionPromptAction(
+                    title: "打开辅助功能",
+                    perform: { [weak self] in
+                        self?.openAccessibilitySettings()
+                    }
+                )
+            ),
+            YPermissionPromptDescriptor(
+                identifier: "screen-capture",
+                displayName: "屏幕与系统音频录制权限",
+                explanation: "用于生成窗口缩略图；授权后需要重启 Y-Dock 才会对当前进程生效。",
+                settingsLocation: "System Settings → Privacy & Security → Screen & System Audio Recording",
+                state: { [weak self] in
+                    switch self?.screenCapturePermissionState() ?? .missing {
+                    case .missing:
+                        return .missing
+                    case .restartRequired:
+                        return .restartRequired
+                    case .active:
+                        return .granted
+                    }
+                },
+                requestAction: YPermissionPromptAction(
+                    title: "打开屏幕录制",
+                    perform: { [weak self] in
+                        guard let self else { return }
+                        _ = self.requestScreenCapturePermission()
+                        self.openScreenCaptureSettings()
+                    }
+                ),
+                openSettingsAction: YPermissionPromptAction(
+                    title: "打开屏幕录制",
+                    perform: { [weak self] in
+                        self?.openScreenCaptureSettings()
+                    }
+                ),
+                restartAction: YPermissionPromptAction(
+                    title: "重启 Y-Dock",
+                    perform: { [weak self] in
+                        self?.relaunchInstalledApplication()
+                    }
+                )
+            )
+        ]
+    }
 
-            • Accessibility：用于读取 Dock 和聚焦窗口
-            • Screen & System Audio Recording：用于生成窗口缩略图
-
-            屏幕录制授权后需要重启 Y-Dock 才会对当前进程生效。请始终从 /Applications 启动正式签名副本。
-            """
-            alert.addButton(withTitle: "打开辅助功能")
-            alert.addButton(withTitle: "打开屏幕录制")
-            alert.addButton(withTitle: "稍后")
-
-            switch alert.runModal() {
-            case .alertFirstButtonReturn:
-                _ = self.requestAccessibilityPermission()
-                self.openAccessibilitySettings()
-            case .alertSecondButtonReturn:
-                _ = self.requestScreenCapturePermission()
-                self.openScreenCaptureSettings()
-            default:
-                break
-            }
-        }
+    private var permissionRuntimeDescriptor: YPermissionRuntimeDescriptor {
+        YPermissionRuntimeDescriptor(
+            installedApplicationPath: installedApplicationPath,
+            isRunningPreferredCopy: { [weak self] in
+                self?.isRunningInstalledCopy() == true
+            },
+            hasPreferredCopy: { [weak self] in
+                self?.hasValidInstalledApplication() == true
+            },
+            switchAction: YPermissionPromptAction(
+                title: "切换到安装版",
+                perform: { [weak self] in
+                    self?.relaunchInstalledApplication()
+                }
+            )
+        )
     }
 
     func openAccessibilitySettings() {
@@ -185,7 +250,7 @@ final class PermissionsManager {
 
     func didResetPrivacyPermissions() {
         clearScreenCaptureRestartState()
-        defaults.set(false, forKey: initialGuidanceKey)
+        permissionPromptCoordinator.resetPresentationHistory()
     }
 
     private func markScreenCaptureMayNeedRestart() {

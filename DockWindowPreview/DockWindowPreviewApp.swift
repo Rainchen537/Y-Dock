@@ -113,6 +113,10 @@ final class DockWindowPreviewApp: NSObject, NSApplicationDelegate {
         DWLog("\(AppBranding.displayName) launched")
     }
 
+    func applicationDidBecomeActive(_ notification: Notification) {
+        permissionsManager.showMissingPermissionGuidance()
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         cancelPreviewPrewarm()
         cancelDockContextMenuProtectionTimer()

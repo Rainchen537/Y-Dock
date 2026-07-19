@@ -2,6 +2,12 @@
 
 All notable Y-Dock release changes are tracked here.
 
+## v1.1.13 - 2026-07-19
+
+- Unified first-launch and later Accessibility and Screen Recording guidance through the shared Y-Project permission prompt framework while preserving the app-specific missing, restart-required, and active states.
+- Added the shared Y-Project DMG presentation framework to the release pipeline, including a dynamically rendered Y-Dock background, validated Finder layout, Applications link, and final read-only remount checks.
+- Relaunches now use LaunchServices without forcing a second app instance.
+
 ## v1.1.12 - 2026-07-18
 
 - Constrained the shared settings window to the active display so controls remain reachable on compact or scaled screens.

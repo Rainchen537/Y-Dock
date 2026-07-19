@@ -4,6 +4,14 @@
 
 不要在这里记录 token、证书密码、Apple ID、notary 密码等敏感信息。
 
+## 2026-07-19
+
+- 将 `Y-Framework/Permission/YPermissionPromptFramework.swift` 加入 Xcode target Sources，统一首次启动和后续 Accessibility、Screen Recording 权限弹窗；共享协调器处理状态指纹、重复抑制、正式安装副本检查与顺序提示，Y-Dock 继续负责公开权限 API 和 `missing / restartRequired / active` 映射。
+- `DockWindowPreviewApp` 在重新激活时调用共享协调器，用户从 System Settings 返回后会自动继续处理第一项尚未完成的权限；显式“请求隐私权限”仍可强制显示当前步骤。
+- 新增仓库内 vendored 的 `Y-Framework/DMG` 和薄 `make_dmg.sh`，`release.sh` 改用共享背景与 Finder 布局流程，动态显示 Y-Dock 名称并验证 `.DS_Store`、Applications 链接、签名、图标位置和最终压缩镜像。
+- 正式安装版重启改为通过 LaunchServices 打开精确 App 路径，不再使用会强制新实例的 `open -n`。
+- 通过共享框架独立编译、Xcode Debug/Release 无签名构建、Y-Dock DMG 生成与背景/布局截图检查；准备发布 `v1.1.13`，版本号为 `MARKETING_VERSION=1.1.13`、`CURRENT_PROJECT_VERSION=38`。
+
 ## 2026-07-18
 
 - 共享设置框架增加屏幕可见区域约束，设置窗口在紧凑、缩放或远程显示环境中不再超出可见区域。

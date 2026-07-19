@@ -13,7 +13,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Rainchen537/Y-Dock/releases/tag/v1.1.12">
+  <a href="https://github.com/Rainchen537/Y-Dock/releases/tag/v1.1.13">
     <img alt="Release" src="https://img.shields.io/github/v/release/Rainchen537/Y-Dock?style=for-the-badge&color=1f8fff">
   </a>
   <img alt="macOS" src="https://img.shields.io/badge/macOS-13%2B-111827?style=for-the-badge&logo=apple">
@@ -23,7 +23,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Rainchen537/Y-Dock/releases/download/v1.1.12/Y-Dock-v1.1.12.dmg">
+  <a href="https://github.com/Rainchen537/Y-Dock/releases/download/v1.1.13/Y-Dock-v1.1.13.dmg">
     <img alt="Download DMG" src="https://img.shields.io/badge/Download-DMG-2563EB?style=for-the-badge&logo=github">
   </a>
 </p>
@@ -53,7 +53,7 @@
 ## 📦 安装
 
 1. 下载最新版 DMG：  
-   [Y-Dock-v1.1.12.dmg](https://github.com/Rainchen537/Y-Dock/releases/download/v1.1.12/Y-Dock-v1.1.12.dmg)
+   [Y-Dock-v1.1.13.dmg](https://github.com/Rainchen537/Y-Dock/releases/download/v1.1.13/Y-Dock-v1.1.13.dmg)
 2. 打开 DMG。
 3. 将 `Y-Dock.app` 拖到 `Applications`。
 4. 启动 `Y-Dock`，按提示开启权限。
@@ -81,7 +81,7 @@ System Settings
 → Screen & System Audio Recording
 ```
 
-权限页会把屏幕录制状态明确区分为 **「未开启」**、**「需要重启」** 和 **「已开启」**：初次引导会先调用系统权限请求，再打开对应设置页；仅打开系统设置不会提前显示需要重启。只有系统报告请求已授权、但当前进程预检仍未生效时，正式安装版才会显示 **「重启」**，开发副本会显示 **「切换安装版」**。
+权限页会把屏幕录制状态明确区分为 **「未开启」**、**「需要重启」** 和 **「已开启」**。首次启动会汇总尚未完成的权限，后续从系统设置返回时按顺序处理当前第一项未完成步骤，并抑制完全相同状态的重复弹窗。初次引导会先调用系统权限请求，再打开对应设置页；仅打开系统设置不会提前显示需要重启。只有系统报告请求已授权、但当前进程预检仍未生效时，正式安装版才会显示 **「重启」**，开发副本会显示 **「切换安装版」**。
 
 权限页也会验证当前副本是否为 `/Applications/Y-Dock.app` 中 Bundle ID 与 Developer ID 团队签名均匹配的正式安装版。开发副本只有在该安装版有效时才允许执行 **「切换安装版」**。**「刷新权限记录」** 只会重置 Y-Dock 自身 Bundle ID 的 Accessibility 与 Screen Capture TCC 记录，不影响其他 App；刷新后需要重新授权并从 `/Applications` 启动正式安装版。
 

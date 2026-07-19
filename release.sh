@@ -128,9 +128,10 @@ echo "  ✓ app 签名校验通过"
 
 bold "▶ 4/8 打包 DMG…"
 mkdir -p "$DIST_DIR"
-ln -s /Applications "$STAGE/Applications"
-hdiutil create -volname "$APP_NAME v$VERSION" -srcfolder "$STAGE" -ov -format UDZO "$DMG_PATH"
-hdiutil verify "$DMG_PATH"
+APP_PATH_OVERRIDE="$STAGE/$APP_NAME.app" \
+VOLUME_NAME_OVERRIDE="$APP_NAME v$VERSION" \
+DMG_OUTPUT_PATH_OVERRIDE="$DMG_PATH" \
+  "$ROOT_DIR/make_dmg.sh"
 
 bold "▶ 5/8 签名 DMG…"
 codesign --force --timestamp --sign "$SIGN_IDENTITY" "$DMG_PATH"

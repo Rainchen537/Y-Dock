@@ -31,7 +31,8 @@ Core behavior:
 - Uses CoreGraphics window lists and snapshots for thumbnails.
 - Uses Accessibility to raise, focus, minimize, close, restore minimized windows, or terminate the owning app.
 - The permissions page distinguishes the verified signed `/Applications/Y-Dock.app` from development copies and enables switching only when the installed Bundle ID, code signature, and Developer ID team match.
-- Initial permission guidance calls the relevant request API before opening System Settings so fresh installs receive a TCC entry.
+- Initial and later permission guidance is presented by the shared Permission coordinator. It summarizes first-launch requirements, advances one unresolved permission at a time after state changes, suppresses duplicate fingerprints, and validates the formal installed copy before invoking app-provided actions.
+- App-provided initial actions call the relevant request API before opening System Settings so fresh installs receive a TCC entry.
 - Screen Recording is modeled as `missing`, `restartRequired`, or `active`; opening System Settings alone stays `missing`, while `restartRequired` is recorded only when `CGRequestScreenCaptureAccess()` reports granted and preflight is still false.
 - Direct updates require the installed destination to be the non-symlink signed `/Applications/Y-Dock.app` with Bundle ID `com.lixingchen.DockWindowPreview` and Developer ID team `A94225N8T5`; the mounted source app must pass the same runtime-identity checks plus generic `codesign` and Gatekeeper validation.
 - Accessibility and Screen Capture TCC refreshes are app-scoped to `com.lixingchen.DockWindowPreview`.
@@ -50,16 +51,19 @@ Core behavior:
 - `DockWindowPreview/OptionTabSwitcher.swift`: global `Option+Tab` hotkey, centered switcher panel, and selection lifecycle.
 - `DockWindowPreview/WindowActivator.swift`: AX-based focus, raise, close, minimize, restore.
 - `DockWindowPreview/SettingsWindow.swift`: independent settings window business controller, using `Y-Framework/Setting` for the shared settings shell and controls; it presents runtime-copy diagnostics and the three-state Screen Recording UI.
-- `DockWindowPreview/PermissionsManager.swift`: Accessibility and Screen Recording state, app-scoped TCC refresh, signed installed-copy validation, and restart/switch actions.
+- `DockWindowPreview/PermissionsManager.swift`: Accessibility and Screen Recording state, app-scoped TCC refresh, shared Permission descriptor injection, signed installed-copy validation, and restart/switch actions.
 - `DockWindowPreview/UpdateChecker.swift`: GitHub release checks and direct update installation, including signed runtime-identity validation of both the installed destination and mounted source app.
 - `Y-Framework/Setting/YSettingsFramework.swift`: vendored copy of the shared Y-Project settings framework, kept in this repository so GitHub source checkouts build independently; it constrains windows to the active display, validates sidebar identifiers, and verifies installed runtime identity.
+- `Y-Framework/Permission/YPermissionPromptFramework.swift`: vendored first-launch and later-permission prompt coordinator; it is part of the Xcode target Sources.
+- `Y-Framework/DMG/`: vendored dynamic background generator and validated Finder DMG layout framework.
 - `DockWindowPreview/AppIcon.icns`: bundled app icon.
 - `assets/readme/logo*.png`: GitHub README logo assets.
 - `README.md`: public project page.
 - `CHANGELOG.md`: user-facing release history.
 - `CHANGELOG.me`: AI/maintenance update log.
 - `AI_MAINTENANCE.me`: legacy AI file kept as a pointer to this file.
-- `release.sh`: isolated Debug and Release builds in invocation-owned temporary DerivedData, Developer ID signing, notarized/stapled DMG packaging, and Gatekeeper verification.
+- `release.sh`: isolated Debug and Release builds in invocation-owned temporary DerivedData, Developer ID signing, shared DMG framework packaging, notarization/stapling, and Gatekeeper verification.
+- `make_dmg.sh`: thin Y-Dock configuration wrapper around `Y-Framework/DMG/YDMGFramework.zsh`.
 
 ## App Identity
 
@@ -76,7 +80,7 @@ The app icon is currently a raw `.icns` resource referenced by `CFBundleIconFile
 
 ## Build Verification
 
-The Xcode target must include `Y-Framework/Setting/YSettingsFramework.swift` in Sources. Use these before release:
+The Xcode target must include both `Y-Framework/Setting/YSettingsFramework.swift` and `Y-Framework/Permission/YPermissionPromptFramework.swift` in Sources. Use these before release:
 
 ```sh
 xcodebuild -project DockWindowPreview.xcodeproj \
@@ -134,7 +138,10 @@ ln -s /Applications "$STAGE/Applications"
 xattr -cr "$STAGE/Y-Dock.app"
 codesign --force --deep --options runtime --timestamp --sign "$SIGN_ID" "$STAGE/Y-Dock.app"
 codesign --verify --deep --strict --verbose=2 "$STAGE/Y-Dock.app"
-hdiutil create -volname "Y-Dock v0.0.0" -srcfolder "$STAGE" -ov -format UDZO "$DMG"
+APP_PATH_OVERRIDE="$STAGE/Y-Dock.app" \
+VOLUME_NAME_OVERRIDE="Y-Dock v0.0.0" \
+DMG_OUTPUT_PATH_OVERRIDE="$DMG" \
+  ./make_dmg.sh
 hdiutil verify "$DMG"
 codesign --force --timestamp --sign "$SIGN_ID" "$DMG"
 codesign --verify --verbose=4 "$DMG"
