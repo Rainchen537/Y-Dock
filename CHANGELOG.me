@@ -10,6 +10,11 @@
 - 保持 `LSUIElement=true` 和菜单栏后台工具形态不变，不修改 Y-Dock 应用 Logo；新模板图标会跟随 macOS 自动适配浅色/深色菜单栏。
 - 加固 `release.sh`：公证等待连接中断但已取得 submission ID 时改用内建 `notarytool wait` 继续等待最终状态；同时校验 Debug/Release 的版本与构建号、签名标识和 Developer ID 类型。失败时清理大型 DerivedData/stage，只保留 DMG 与公证日志用于诊断。
 - 准备发布 `v1.1.15`，版本号为 `MARKETING_VERSION=1.1.15`、`CURRENT_PROJECT_VERSION=40`；README、公开 changelog 和维护说明已同步。
+- 完成 `v1.1.15` 发布闭环：源码提交 `f7c63c9f338f408175549a292c3687e55bd05863`、tag `v1.1.15`、Release `https://github.com/Rainchen537/Y-Dock/releases/tag/v1.1.15`；最终 `Y-Dock-v1.1.15.dmg` SHA256 为 `77502e352e8b59b6071be6e5facffa29e1de73e8beb42fdf2d68723e1750d2d6`，App 公证 ID 为 `568a6d58-f28c-400c-8f6c-1bf1c9a2fd3e`，DMG 公证 ID 为 `983822c6-70a8-42d0-96de-a4a41bd15f22`。GitHub Release 的 tag、标题、真实换行 release notes、资产名称、下载链接和 asset digest 均已复核，远端 digest 与本地 SHA256 完全一致。
+- 从最终 DMG 覆盖安装到 `/Applications/Y-Dock.app` 并启动；确认正式安装版为 `1.1.15 (40)`、`LSUIElement=true`、Bundle ID `com.lixingchen.DockWindowPreview`、Developer ID 团队 `A94225N8T5`，hardened runtime、严格 codesign、App/DMG stapled ticket、Gatekeeper 与 DMG 镜像校验全部通过。
+- 菜单栏中的新版 `18 x 18` template 图标已在真实菜单栏复查：双层窗口轮廓与底部 Dock 横线清晰，透明背景正常；设置权限页正确识别当前副本为正式安装版，辅助功能和屏幕录制权限独立显示，更新入口显示 `v1.1.15`。
+- 使用真实 TextEdit 多窗口验证 Dock hover：Accessibility 命中 `AXDockItem / AXApplicationDockItem` 后，Y-Dock layer 999 预览面板显示多张真实窗口卡片。点击首张卡片后，前台应用为 `com.apple.TextEdit`、聚焦窗口为 `未命名9`，预览面板正确关闭。
+- 使用真实 `Option+Tab` 输入验证 layer 1000 窗口切换器，运行日志记录 MRU `selected index: 0`；按下 Esc 后切换器关闭，前台应用和聚焦窗口仍为 TextEdit / `未命名9`，确认取消操作未误激活其他窗口。
 
 ## 2026-07-19
 
