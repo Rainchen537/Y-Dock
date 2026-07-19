@@ -11,6 +11,7 @@ DEBUG_DERIVED_DATA="$WORK_ROOT/DebugDerivedData"
 RELEASE_DERIVED_DATA="$WORK_ROOT/ReleaseDerivedData"
 DEBUG_APP="$DEBUG_DERIVED_DATA/Build/Products/Debug/$APP_NAME.app"
 BUILT_APP="$RELEASE_DERIVED_DATA/Build/Products/Release/$APP_NAME.app"
+APP_ZIP="$WORK_ROOT/$APP_NAME.zip"
 DIST_DIR="$ROOT_DIR/dist"
 FINAL_DMG_PATH="$DIST_DIR/$APP_NAME-v$VERSION.dmg"
 DMG_WORK="$WORK_ROOT/dmg"
@@ -41,7 +42,7 @@ if [[ -z "$SIGN_IDENTITY" ]]; then
   exit 1
 fi
 
-bold "▶ 0/8 检查公证凭据…"
+bold "▶ 0/9 检查公证凭据…"
 if ! xcrun notarytool history --keychain-profile "$NOTARY_PROFILE" >/dev/null 2>&1; then
   cat >&2 <<EOF
 找不到公证凭据 profile：$NOTARY_PROFILE
@@ -81,7 +82,21 @@ notarize() {
   return 0
 }
 
-bold "▶ 1/8 Debug 构建…"
+validate_staple() {
+  local target="$1"
+  local output
+  if ! output="$(xcrun stapler validate "$target" 2>&1)"; then
+    print -u2 -- "$output"
+    return 1
+  fi
+  print -r -- "$output"
+  if [[ "$output" != *"The validate action worked!"* ]]; then
+    echo "✗ 未检测到有效的 stapled ticket：$target" >&2
+    return 1
+  fi
+}
+
+bold "▶ 1/9 Debug 构建…"
 xcodebuild \
   -project "$PROJECT" \
   -scheme "$SCHEME" \
@@ -95,7 +110,7 @@ if [[ "$DEBUG_VERSION" != "$VERSION" ]]; then
   exit 1
 fi
 
-bold "▶ 2/8 Release 构建…"
+bold "▶ 2/9 Release 构建…"
 xcodebuild \
   -project "$PROJECT" \
   -scheme "$SCHEME" \
@@ -109,7 +124,7 @@ if [[ "$BUILT_VERSION" != "$VERSION" ]]; then
   exit 1
 fi
 
-bold "▶ 3/8 签名 app…"
+bold "▶ 3/9 签名 app…"
 rm -rf "$STAGE/$APP_NAME.app"
 ditto --noextattr --norsrc "$BUILT_APP" "$STAGE/$APP_NAME.app"
 xattr -cr "$STAGE/$APP_NAME.app"
@@ -126,32 +141,43 @@ if ! grep -q "flags=.*runtime" <<< "$SIG_INFO"; then
 fi
 echo "  ✓ app 签名校验通过"
 
-bold "▶ 4/8 打包 DMG…"
+bold "▶ 4/9 公证并装订 app…"
+ditto -c -k --keepParent "$STAGE/$APP_NAME.app" "$APP_ZIP"
+notarize "$APP_ZIP"
+rm -f "$APP_ZIP"
+xcrun stapler staple "$STAGE/$APP_NAME.app"
+validate_staple "$STAGE/$APP_NAME.app"
+codesign --verify --deep --strict --verbose=2 "$STAGE/$APP_NAME.app"
+spctl -a -t exec -vvv "$STAGE/$APP_NAME.app"
+echo "  ✓ app 已公证、装订并通过 Gatekeeper 验证"
+
+bold "▶ 5/9 打包 DMG…"
 mkdir -p "$DIST_DIR"
 APP_PATH_OVERRIDE="$STAGE/$APP_NAME.app" \
 VOLUME_NAME_OVERRIDE="$APP_NAME v$VERSION" \
 DMG_OUTPUT_PATH_OVERRIDE="$DMG_PATH" \
   "$ROOT_DIR/make_dmg.sh"
 
-bold "▶ 5/8 签名 DMG…"
+bold "▶ 6/9 签名 DMG…"
 codesign --force --timestamp --sign "$SIGN_IDENTITY" "$DMG_PATH"
 codesign --verify --verbose=4 "$DMG_PATH"
 echo "  ✓ DMG 签名校验通过"
 
-bold "▶ 6/8 公证 DMG…"
+bold "▶ 7/9 公证 DMG…"
 notarize "$DMG_PATH"
 echo "  ✓ DMG 已公证"
 
-bold "▶ 7/8 装订 DMG 票据…"
+bold "▶ 8/9 装订 DMG 票据…"
 xcrun stapler staple "$DMG_PATH"
-xcrun stapler validate "$DMG_PATH"
+validate_staple "$DMG_PATH"
 echo "  ✓ DMG 已装订"
 
-bold "▶ 8/8 Gatekeeper 验证…"
+bold "▶ 9/9 最终验证…"
 spctl -a -vvv -t open --context context:primary-signature "$DMG_PATH"
 VERIFY_MOUNT="$(mktemp -d /tmp/Y-Dock-verify.XXXXXX)"
 hdiutil attach "$DMG_PATH" -mountpoint "$VERIFY_MOUNT" -nobrowse -noautoopen >/dev/null
 codesign --verify --deep --strict --verbose=2 "$VERIFY_MOUNT/$APP_NAME.app"
+validate_staple "$VERIFY_MOUNT/$APP_NAME.app"
 spctl -a -t exec -vvv "$VERIFY_MOUNT/$APP_NAME.app"
 hdiutil detach "$VERIFY_MOUNT" >/dev/null 2>&1 || hdiutil detach "$VERIFY_MOUNT" -force >/dev/null 2>&1
 rm -rf "$VERIFY_MOUNT"

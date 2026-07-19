@@ -11,6 +11,9 @@
 - 新增仓库内 vendored 的 `Y-Framework/DMG` 和薄 `make_dmg.sh`，`release.sh` 改用共享背景与 Finder 布局流程，动态显示 Y-Dock 名称并验证 `.DS_Store`、Applications 链接、签名、图标位置和最终压缩镜像。
 - 正式安装版重启改为通过 LaunchServices 打开精确 App 路径，不再使用会强制新实例的 `open -n`。
 - 通过共享框架独立编译、Xcode Debug/Release 无签名构建、Y-Dock DMG 生成与背景/布局截图检查；准备发布 `v1.1.13`，版本号为 `MARKETING_VERSION=1.1.13`、`CURRENT_PROJECT_VERSION=38`。
+- `v1.1.13` 的 DMG 已签名、公证并装订，但从最终 DMG 安装后复查发现 App 本体没有嵌入 stapled ticket；虽然 Gatekeeper 在线校验通过，仍不满足项目要求的 App/DMG 双重公证装订闭环，因此保留已发布 tag，不移动或复用该版本，并立即准备补丁版。
+- `release.sh` 新增 App ZIP 公证、App ticket 装订、严格 ticket 文本校验和最终 DMG 重挂载后的 App ticket 复查；`stapler validate` 仅返回成功退出状态但输出“没有票据”时现在会明确失败。
+- 准备发布 `v1.1.14`，版本号为 `MARKETING_VERSION=1.1.14`、`CURRENT_PROJECT_VERSION=39`；README 和公开 changelog 已切换到补丁版下载链接。
 
 ## 2026-07-18
 

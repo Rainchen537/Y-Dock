@@ -2,6 +2,11 @@
 
 All notable Y-Dock release changes are tracked here.
 
+## v1.1.14 - 2026-07-19
+
+- Notarizes and staples the signed Y-Dock app bundle before packaging it into the DMG, then validates the embedded app ticket again after the final image is mounted.
+- Treats a missing stapled ticket as a release failure even when `stapler validate` returns a successful process status with a diagnostic message.
+
 ## v1.1.13 - 2026-07-19
 
 - Unified first-launch and later Accessibility and Screen Recording guidance through the shared Y-Project permission prompt framework while preserving the app-specific missing, restart-required, and active states.
