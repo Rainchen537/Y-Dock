@@ -6,6 +6,7 @@ PROJECT="$ROOT_DIR/DockWindowPreview.xcodeproj"
 SCHEME="DockWindowPreview"
 APP_NAME="Y-Dock"
 VERSION="$(awk -F ' = ' '/MARKETING_VERSION = / { gsub(/;/, "", $2); print $2; exit }' "$ROOT_DIR/DockWindowPreview.xcodeproj/project.pbxproj")"
+BUILD_NUMBER="$(awk -F ' = ' '/CURRENT_PROJECT_VERSION = / { gsub(/;/, "", $2); print $2; exit }' "$ROOT_DIR/DockWindowPreview.xcodeproj/project.pbxproj")"
 WORK_ROOT="$(mktemp -d /tmp/Y-Dock-release.XXXXXX)"
 DEBUG_DERIVED_DATA="$WORK_ROOT/DebugDerivedData"
 RELEASE_DERIVED_DATA="$WORK_ROOT/ReleaseDerivedData"
@@ -22,11 +23,18 @@ STAGE="$WORK_ROOT/stage"
 VERIFY_MOUNT=""
 
 cleanup() {
+  local exit_status=$?
   if [[ -n "$VERIFY_MOUNT" ]]; then
     hdiutil detach "$VERIFY_MOUNT" >/dev/null 2>&1 || hdiutil detach "$VERIFY_MOUNT" -force >/dev/null 2>&1 || true
     rm -rf "$VERIFY_MOUNT"
   fi
-  rm -rf "$WORK_ROOT"
+  if (( exit_status == 0 )); then
+    rm -rf "$WORK_ROOT"
+  else
+    rm -rf "$DEBUG_DERIVED_DATA" "$RELEASE_DERIVED_DATA" "$STAGE"
+    rm -f "$APP_ZIP"
+    echo "发布失败，已清理构建缓存并保留 DMG/公证日志：$WORK_ROOT" >&2
+  fi
 }
 trap cleanup EXIT
 mkdir -p "$DMG_WORK" "$STAGE"
@@ -60,26 +68,41 @@ rm -f "$FINAL_DMG_PATH"
 notarize() {
   local target="$1"
   local log
+  local sid=""
   log="$(mktemp "$WORK_ROOT/notary.XXXXXX")"
-  if ! xcrun notarytool submit "$target" \
+
+  if xcrun notarytool submit "$target" \
         --keychain-profile "$NOTARY_PROFILE" \
         --wait 2>&1 | tee "$log"; then
-    echo "✗ 公证提交失败：$target" >&2
-    rm -f "$log"
-    return 1
+    sid="$(awk '/^[[:space:]]*id:/ { print $2; exit }' "$log")"
+    if grep -q "status: Accepted" "$log"; then
+      rm -f "$log"
+      return 0
+    fi
+  else
+    sid="$(awk '/^[[:space:]]*id:/ { print $2; exit }' "$log")"
+    if [[ -n "$sid" ]]; then
+      echo "  ! 等待连接中断，改用 notarytool wait：$sid"
+      if xcrun notarytool wait "$sid" \
+            --keychain-profile "$NOTARY_PROFILE" \
+            2>&1 | tee -a "$log" && \
+          grep -q "status: Accepted" "$log"; then
+        rm -f "$log"
+        return 0
+      fi
+    fi
   fi
 
-  local sid
-  sid="$(grep -m1 -E "^[[:space:]]*id:" "$log" | awk '{print $2}')"
-  if ! grep -q "status: Accepted" "$log"; then
-    echo "✗ 公证未通过：$target" >&2
-    [[ -n "$sid" ]] && xcrun notarytool log "$sid" --keychain-profile "$NOTARY_PROFILE" >&2 || true
-    rm -f "$log"
-    return 1
+  if [[ -z "$sid" ]]; then
+    echo "✗ 公证提交失败且没有返回 submission ID：$target" >&2
+  else
+    echo "✗ 公证未通过或等待失败：$target（$sid）" >&2
+    xcrun notarytool info "$sid" \
+      --keychain-profile "$NOTARY_PROFILE" >&2 || true
+    xcrun notarytool log "$sid" \
+      --keychain-profile "$NOTARY_PROFILE" >&2 || true
   fi
-
-  rm -f "$log"
-  return 0
+  return 1
 }
 
 validate_staple() {
@@ -105,8 +128,9 @@ xcodebuild \
   CODE_SIGNING_ALLOWED=NO \
   build
 DEBUG_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$DEBUG_APP/Contents/Info.plist")"
-if [[ "$DEBUG_VERSION" != "$VERSION" ]]; then
-  echo "✗ Debug 构建版本 $DEBUG_VERSION 与 DMG 版本 $VERSION 不一致。" >&2
+DEBUG_BUILD="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$DEBUG_APP/Contents/Info.plist")"
+if [[ "$DEBUG_VERSION" != "$VERSION" || "$DEBUG_BUILD" != "$BUILD_NUMBER" ]]; then
+  echo "✗ Debug 构建版本 $DEBUG_VERSION ($DEBUG_BUILD) 与项目版本 $VERSION ($BUILD_NUMBER) 不一致。" >&2
   exit 1
 fi
 
@@ -119,8 +143,9 @@ xcodebuild \
   CODE_SIGNING_ALLOWED=NO \
   build
 BUILT_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$BUILT_APP/Contents/Info.plist")"
-if [[ "$BUILT_VERSION" != "$VERSION" ]]; then
-  echo "✗ Release 构建版本 $BUILT_VERSION 与 DMG 版本 $VERSION 不一致。" >&2
+BUILT_BUILD="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$BUILT_APP/Contents/Info.plist")"
+if [[ "$BUILT_VERSION" != "$VERSION" || "$BUILT_BUILD" != "$BUILD_NUMBER" ]]; then
+  echo "✗ Release 构建版本 $BUILT_VERSION ($BUILT_BUILD) 与项目版本 $VERSION ($BUILD_NUMBER) 不一致。" >&2
   exit 1
 fi
 
@@ -131,6 +156,14 @@ xattr -cr "$STAGE/$APP_NAME.app"
 codesign --force --deep --options runtime --timestamp --sign "$SIGN_IDENTITY" "$STAGE/$APP_NAME.app"
 codesign --verify --deep --strict --verbose=2 "$STAGE/$APP_NAME.app"
 SIG_INFO="$(codesign -dvvv "$STAGE/$APP_NAME.app" 2>&1)"
+if ! grep -q "Identifier=com.lixingchen.DockWindowPreview" <<< "$SIG_INFO"; then
+  echo "✗ app 签名标识不是 com.lixingchen.DockWindowPreview。" >&2
+  exit 1
+fi
+if ! grep -q "Authority=Developer ID Application" <<< "$SIG_INFO"; then
+  echo "✗ app 未用 Developer ID Application 签名。" >&2
+  exit 1
+fi
 if ! grep -q "TeamIdentifier=A94225N8T5" <<< "$SIG_INFO"; then
   echo "✗ app 签名团队不是 A94225N8T5。" >&2
   exit 1
@@ -170,7 +203,8 @@ echo "  ✓ DMG 已公证"
 bold "▶ 8/9 装订 DMG 票据…"
 xcrun stapler staple "$DMG_PATH"
 validate_staple "$DMG_PATH"
-echo "  ✓ DMG 已装订"
+hdiutil verify "$DMG_PATH"
+echo "  ✓ DMG 已装订并通过镜像校验"
 
 bold "▶ 9/9 最终验证…"
 spctl -a -vvv -t open --context context:primary-signature "$DMG_PATH"
@@ -184,6 +218,9 @@ rm -rf "$VERIFY_MOUNT"
 VERIFY_MOUNT=""
 rm -f "$FINAL_DMG_PATH"
 mv "$DMG_PATH" "$FINAL_DMG_PATH"
+codesign --verify --verbose=4 "$FINAL_DMG_PATH"
+validate_staple "$FINAL_DMG_PATH"
+spctl -a -vvv -t open --context context:primary-signature "$FINAL_DMG_PATH"
 
 echo ""
 bold "✅ 发布产物完成"

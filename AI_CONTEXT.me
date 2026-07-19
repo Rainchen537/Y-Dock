@@ -18,6 +18,7 @@ Y-Dock is a lightweight macOS menu bar utility that mimics the Windows taskbar m
 Core behavior:
 
 - Runs as a menu bar/background app only. It should not appear in Dock or Cmd-Tab.
+- The status item uses a transparent `18 x 18` template image with two offset window outlines and a rounded Dock line, keeping the window-preview function recognizable in both light and dark menu bars.
 - Watches global mouse movement and performs best-effort Dock icon hit testing through Accessibility.
 - Shows an AppKit `NSPanel` preview near Dock icons with one card per window.
 - Registers `Option+Tab` with public Carbon hotkey APIs for a Windows-style window switcher.
@@ -56,13 +57,14 @@ Core behavior:
 - `Y-Framework/Setting/YSettingsFramework.swift`: vendored copy of the shared Y-Project settings framework, kept in this repository so GitHub source checkouts build independently; it constrains windows to the active display, validates sidebar identifiers, and verifies installed runtime identity.
 - `Y-Framework/Permission/YPermissionPromptFramework.swift`: vendored first-launch and later-permission prompt coordinator; it is part of the Xcode target Sources.
 - `Y-Framework/DMG/`: vendored dynamic background generator and validated Finder DMG layout framework.
+- `DockWindowPreview/AppIconFactory.swift`: loads the bundled app icon and draws the transparent two-window + Dock-line template menu bar icon.
 - `DockWindowPreview/AppIcon.icns`: bundled app icon.
 - `assets/readme/logo*.png`: GitHub README logo assets.
 - `README.md`: public project page.
 - `CHANGELOG.md`: user-facing release history.
 - `CHANGELOG.me`: AI/maintenance update log.
 - `AI_MAINTENANCE.me`: legacy AI file kept as a pointer to this file.
-- `release.sh`: isolated Debug and Release builds in invocation-owned temporary DerivedData, Developer ID signing, App ZIP notarization and App ticket stapling, shared DMG framework packaging, DMG notarization/stapling, mounted-App ticket revalidation, and Gatekeeper verification.
+- `release.sh`: isolated Debug and Release builds with version/build parity checks, Developer ID identity validation, App ZIP notarization and App ticket stapling, shared DMG framework packaging, DMG notarization/stapling, mounted-App ticket revalidation, and Gatekeeper verification. If `notarytool submit --wait` disconnects after returning a submission ID, the script continues with `notarytool wait` until a final status; failed runs remove large build caches while retaining only the DMG and notary logs for diagnosis.
 - `make_dmg.sh`: thin Y-Dock configuration wrapper around `Y-Framework/DMG/YDMGFramework.zsh`.
 
 ## App Identity
@@ -126,40 +128,18 @@ Packaging can be run through:
 ./release.sh
 ```
 
-The older manual equivalent, replacing `0.0.0` with the release version:
-
-```sh
-APP="build/ReleaseDerivedData/Build/Products/Release/Y-Dock.app"
-STAGE="$(mktemp -d /tmp/Y-Dock-v0.0.0.XXXXXX)"
-SIGN_ID="Developer ID Application: Xingchen Li (A94225N8T5)"
-DMG="dist/Y-Dock-v0.0.0.dmg"
-ditto --noextattr --norsrc "$APP" "$STAGE/Y-Dock.app"
-ln -s /Applications "$STAGE/Applications"
-xattr -cr "$STAGE/Y-Dock.app"
-codesign --force --deep --options runtime --timestamp --sign "$SIGN_ID" "$STAGE/Y-Dock.app"
-codesign --verify --deep --strict --verbose=2 "$STAGE/Y-Dock.app"
-APP_PATH_OVERRIDE="$STAGE/Y-Dock.app" \
-VOLUME_NAME_OVERRIDE="Y-Dock v0.0.0" \
-DMG_OUTPUT_PATH_OVERRIDE="$DMG" \
-  ./make_dmg.sh
-hdiutil verify "$DMG"
-codesign --force --timestamp --sign "$SIGN_ID" "$DMG"
-codesign --verify --verbose=4 "$DMG"
-xcrun notarytool submit "$DMG" --keychain-profile y-dock-notary --wait
-xcrun stapler staple "$DMG"
-xcrun stapler validate "$DMG"
-spctl -a -vvv -t open --context context:primary-signature "$DMG"
-```
+`release.sh` 是唯一受支持的发布入口，不再维护容易遗漏 App 本体公证与 ticket 装订的手工等价命令。不得只公证 DMG：App 必须先以 ZIP 提交公证、完成 staple 和 Gatekeeper 验证，再打包进 DMG；最终还要重挂载镜像复查其中的 App ticket。
 
 GitHub release with GitHub MCP / GitHub App is preferred. If unavailable, use `gh`:
 
 ```sh
-git add README.md CHANGELOG.md AI_CONTEXT.me CHANGELOG.me DockWindowPreview.xcodeproj/project.pbxproj DockWindowPreview/AppIcon.icns assets/readme/logo.png assets/readme/logo-v0.0.0.png
-git commit -m "Release v0.0.0"
-git tag v0.0.0
-git push origin master
-git push origin v0.0.0
-gh release create v0.0.0 "dist/Y-Dock-v0.0.0.dmg" --title "Y-Dock v0.0.0" --notes-file build/release-notes-v0.0.0.txt
+VERSION="X.Y.Z" # 发布时替换为已构建并验证的真实版本
+git add README.md CHANGELOG.md AI_CONTEXT.me CHANGELOG.me DockWindowPreview.xcodeproj/project.pbxproj DockWindowPreview/AppIconFactory.swift release.sh
+git commit -m "Release Y-Dock v$VERSION"
+git tag "v$VERSION"
+git push origin HEAD:master
+git push origin "v$VERSION"
+gh release create "v$VERSION" "dist/Y-Dock-v$VERSION.dmg" --title "Y-Dock v$VERSION" --notes-file "build/release-notes-v$VERSION.txt"
 ```
 
 If `gh` is unavailable, use the GitHub Releases REST API with the existing repo remote (`Rainchen537/Y-Dock`) and upload the same DMG asset. Do not skip updating `CHANGELOG.md`; README links and release notes should match the tag.

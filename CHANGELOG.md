@@ -2,6 +2,10 @@
 
 All notable Y-Dock release changes are tracked here.
 
+## v1.1.15 - 2026-07-20
+
+- Redesigned the menu bar template icon as two offset window outlines above a light rounded Dock line, replacing the heavy solid mark with a clearer window-preview symbol that adapts to light and dark menu bars.
+
 ## v1.1.14 - 2026-07-19
 
 - Notarizes and staples the signed Y-Dock app bundle before packaging it into the DMG, then validates the embedded app ticket again after the final image is mounted.

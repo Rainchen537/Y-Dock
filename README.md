@@ -13,7 +13,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Rainchen537/Y-Dock/releases/tag/v1.1.14">
+  <a href="https://github.com/Rainchen537/Y-Dock/releases/tag/v1.1.15">
     <img alt="Release" src="https://img.shields.io/github/v/release/Rainchen537/Y-Dock?style=for-the-badge&color=1f8fff">
   </a>
   <img alt="macOS" src="https://img.shields.io/badge/macOS-13%2B-111827?style=for-the-badge&logo=apple">
@@ -23,7 +23,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Rainchen537/Y-Dock/releases/download/v1.1.14/Y-Dock-v1.1.14.dmg">
+  <a href="https://github.com/Rainchen537/Y-Dock/releases/download/v1.1.15/Y-Dock-v1.1.15.dmg">
     <img alt="Download DMG" src="https://img.shields.io/badge/Download-DMG-2563EB?style=for-the-badge&logo=github">
   </a>
 </p>
@@ -53,7 +53,7 @@
 ## 📦 安装
 
 1. 下载最新版 DMG：  
-   [Y-Dock-v1.1.14.dmg](https://github.com/Rainchen537/Y-Dock/releases/download/v1.1.14/Y-Dock-v1.1.14.dmg)
+   [Y-Dock-v1.1.15.dmg](https://github.com/Rainchen537/Y-Dock/releases/download/v1.1.15/Y-Dock-v1.1.15.dmg)
 2. 打开 DMG。
 3. 将 `Y-Dock.app` 拖到 `Applications`。
 4. 启动 `Y-Dock`，按提示开启权限。
@@ -96,7 +96,7 @@ System Settings
 
 ## ⚙️ 设置
 
-点击菜单栏图标可打开设置。Y-Dock 是后台菜单栏工具，默认不会显示在 Dock 或 Cmd-Tab 中。
+点击菜单栏中的双窗口 + Dock 线稿图标可打开设置。该模板图标会自动适配系统浅色/深色菜单栏；Y-Dock 仍是后台菜单栏工具，默认不会显示在 Dock 或 Cmd-Tab 中。
 
 可调整：
 

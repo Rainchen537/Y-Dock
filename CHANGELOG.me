@@ -4,6 +4,13 @@
 
 不要在这里记录 token、证书密码、Apple ID、notary 密码等敏感信息。
 
+## 2026-07-20
+
+- 重做 Y-Dock 菜单栏图标为透明 `18 x 18` template image：两个错位窗口轮廓表达多窗口预览，底部圆头横线表达 Dock，替代原来视觉偏重的实心标记。
+- 保持 `LSUIElement=true` 和菜单栏后台工具形态不变，不修改 Y-Dock 应用 Logo；新模板图标会跟随 macOS 自动适配浅色/深色菜单栏。
+- 加固 `release.sh`：公证等待连接中断但已取得 submission ID 时改用内建 `notarytool wait` 继续等待最终状态；同时校验 Debug/Release 的版本与构建号、签名标识和 Developer ID 类型。失败时清理大型 DerivedData/stage，只保留 DMG 与公证日志用于诊断。
+- 准备发布 `v1.1.15`，版本号为 `MARKETING_VERSION=1.1.15`、`CURRENT_PROJECT_VERSION=40`；README、公开 changelog 和维护说明已同步。
+
 ## 2026-07-19
 
 - 将 `Y-Framework/Permission/YPermissionPromptFramework.swift` 加入 Xcode target Sources，统一首次启动和后续 Accessibility、Screen Recording 权限弹窗；共享协调器处理状态指纹、重复抑制、正式安装副本检查与顺序提示，Y-Dock 继续负责公开权限 API 和 `missing / restartRequired / active` 映射。

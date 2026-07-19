@@ -100,34 +100,31 @@ enum AppIconFactory {
     }
 
     static func statusBarIcon() -> NSImage {
-        let image = NSImage(size: NSSize(width: 20, height: 20))
+        let image = NSImage(size: NSSize(width: 18, height: 18))
         image.lockFocus()
+        defer { image.unlockFocus() }
 
-        NSColor.black.setFill()
+        func window(_ rect: NSRect, radius: CGFloat, width: CGFloat, alpha: CGFloat) {
+            let path = NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius)
+            path.lineWidth = width
+            path.lineJoinStyle = .round
+            NSColor.black.withAlphaComponent(alpha).setStroke()
+            path.stroke()
+        }
 
-        let windowShape = NSBezierPath()
-        windowShape.windingRule = .evenOdd
-        windowShape.appendRoundedRect(
-            NSRect(x: 2.4, y: 4.4, width: 15.2, height: 12.6),
-            xRadius: 3.8,
-            yRadius: 3.8
-        )
-        windowShape.appendRoundedRect(
-            NSRect(x: 5.4, y: 7.8, width: 9.2, height: 5.6),
-            xRadius: 1.8,
-            yRadius: 1.8
-        )
-        windowShape.fill()
+        window(NSRect(x: 2.0, y: 6.4, width: 11.8, height: 8.2), radius: 2.2, width: 1.3, alpha: 0.45)
+        window(NSRect(x: 4.2, y: 7.5, width: 11.8, height: 8.2), radius: 2.2, width: 1.45, alpha: 1)
 
-        let dockBase = NSBezierPath(
-            roundedRect: NSRect(x: 4.0, y: 2.5, width: 12.0, height: 2.1),
-            xRadius: 1.05,
-            yRadius: 1.05
-        )
-        dockBase.fill()
+        let dock = NSBezierPath()
+        dock.move(to: NSPoint(x: 2.6, y: 3.4))
+        dock.line(to: NSPoint(x: 15.4, y: 3.4))
+        dock.lineWidth = 1.7
+        dock.lineCapStyle = .round
+        NSColor.black.setStroke()
+        dock.stroke()
 
-        image.unlockFocus()
         image.isTemplate = true
+        image.accessibilityDescription = "Y-Dock 窗口预览"
         return image
     }
 }
