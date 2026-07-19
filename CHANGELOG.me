@@ -14,6 +14,8 @@
 - `v1.1.13` 的 DMG 已签名、公证并装订，但从最终 DMG 安装后复查发现 App 本体没有嵌入 stapled ticket；虽然 Gatekeeper 在线校验通过，仍不满足项目要求的 App/DMG 双重公证装订闭环，因此保留已发布 tag，不移动或复用该版本，并立即准备补丁版。
 - `release.sh` 新增 App ZIP 公证、App ticket 装订、严格 ticket 文本校验和最终 DMG 重挂载后的 App ticket 复查；`stapler validate` 仅返回成功退出状态但输出“没有票据”时现在会明确失败。
 - 准备发布 `v1.1.14`，版本号为 `MARKETING_VERSION=1.1.14`、`CURRENT_PROJECT_VERSION=39`；README 和公开 changelog 已切换到补丁版下载链接。
+- 完成 `v1.1.14` 发布闭环：源码提交 `83375e4d49d78f3504788a32e800594d68a14ce5`、tag `v1.1.14`、Release `https://github.com/Rainchen537/Y-Dock/releases/tag/v1.1.14`；最终 `Y-Dock-v1.1.14.dmg` SHA256 为 `c5cef7786fc8d3c2148a2a00e914e1d06f82f0eef490bc778360ae72692f007e`，GitHub asset 名称、下载链接和 digest 已核对一致，App 公证 ID 为 `edd04ff9-c623-444c-b511-dc302eb88b66`，DMG 公证 ID 为 `04bcfc3f-f5c2-4780-8afa-5bfd02dc8426`；已发布的 `v1.1.13` tag 和 Release 保持不变。
+- 从上述最终 DMG 覆盖安装到 `/Applications/Y-Dock.app` 并通过 LaunchServices 启动；确认版本 `1.1.14 (39)`、Bundle ID `com.lixingchen.DockWindowPreview`、Developer ID 团队 `A94225N8T5`、hardened runtime、严格 codesign、App/DMG stapled ticket 与 Gatekeeper 均通过，且只运行一个 `Y-Dock` 进程。安装版权限页显示“正式安装版”、辅助功能和屏幕录制均“已开启”；设置页和更新入口正常，更新检查在瞬时 SSL 网络错误后重试成功并显示“最新版 1.1.14”；真实 `Option+Tab` 显示完整多窗口切换器且首张卡片被选中，Esc 可取消，Dock 悬停 TextEdit 时显示三张窗口预览卡片并可点击切换到目标窗口。
 
 ## 2026-07-18
 
