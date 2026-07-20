@@ -2,6 +2,11 @@
 
 All notable Y-Dock release changes are tracked here.
 
+## v1.1.16 - 2026-07-20
+
+- Rebuilt the drag-to-install DMG with a light high-contrast 2x Retina background, keeping Finder's black app labels crisp and readable in light and dark system appearances.
+- Removed visible `.background` and `.fseventsd` folders from the final image, hid Finder's toolbar, status bar, path bar, and tab bar, and aligned the installation arrow from the saved Y-Dock and Applications icon coordinates.
+
 ## v1.1.15 - 2026-07-20
 
 - Redesigned the menu bar template icon as two offset window outlines above a light rounded Dock line, replacing the heavy solid mark with a clearer window-preview symbol that adapts to light and dark menu bars.

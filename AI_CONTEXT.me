@@ -56,7 +56,7 @@ Core behavior:
 - `DockWindowPreview/UpdateChecker.swift`: GitHub release checks and direct update installation, including signed runtime-identity validation of both the installed destination and mounted source app.
 - `Y-Framework/Setting/YSettingsFramework.swift`: vendored copy of the shared Y-Project settings framework, kept in this repository so GitHub source checkouts build independently; it constrains windows to the active display, validates sidebar identifiers, and verifies installed runtime identity.
 - `Y-Framework/Permission/YPermissionPromptFramework.swift`: vendored first-launch and later-permission prompt coordinator; it is part of the Xcode target Sources.
-- `Y-Framework/DMG/`: vendored dynamic background generator and validated Finder DMG layout framework.
+- `Y-Framework/DMG/`: vendored APFS DMG framework with a high-contrast 2x Retina background; it stores the background under Finder's special-hidden `.Trashes`, removes `.fseventsd`/index metadata before compression, hides the toolbar/status/path/tab bars, and validates background pixels/DPI plus full icon coordinates after a final read-only remount.
 - `DockWindowPreview/AppIconFactory.swift`: loads the bundled app icon and draws the transparent two-window + Dock-line template menu bar icon.
 - `DockWindowPreview/AppIcon.icns`: bundled app icon.
 - `assets/readme/logo*.png`: GitHub README logo assets.
