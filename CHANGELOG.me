@@ -11,6 +11,10 @@
 - 共享框架已通过包含隐藏兼容 App 的完整 APFS UDZO 测试；最终只读重挂载后的严格签名、BSD hidden、画外兼容图标坐标、可见图标坐标及元数据断言全部通过。深色系统外观截图确认 Finder 黑色名称清晰可读、箭头与两枚图标纵向中心对齐，左上角不再显示 `.background` 或 `.fseventsd`。
 - 准备发布 `v1.1.16`，版本号为 `MARKETING_VERSION=1.1.16`、`CURRENT_PROJECT_VERSION=41`；README、公开 changelog 和维护说明已同步。
 - 基于最终源码运行完整 Debug/Release 构建和正式发布流程：App 公证 ID 为 `889aa993-4c92-4891-92dd-685b72ceeeae`，DMG 公证 ID 为 `ef4706fa-ad6b-4da3-b5ec-6606e635cab5`；最终 `Y-Dock-v1.1.16.dmg` SHA256 为 `cdadf37e87c287da544fb44c2aaa3a219ef212e464872b849326de8aa19394b7`，Developer ID、hardened runtime、严格签名、App/DMG stapled ticket、Gatekeeper 与 `hdiutil verify` 均通过。
+- 完成 `v1.1.16` 发布闭环：对应源码提交 `8afea9832c955317fd31072c3fad39f1c1d00cbd`、tag `v1.1.16`、Release `https://github.com/Rainchen537/Y-Dock/releases/tag/v1.1.16`。GitHub Release 的 tag、标题、真实换行 release notes、资产 `Y-Dock-v1.1.16.dmg`、下载链接和 asset digest 均已复核，远端 digest 与本地 SHA256 完全一致。
+- 从上述最终签名、公证并 stapled 的 DMG 覆盖安装到 `/Applications/Y-Dock.app` 并启动；确认正式安装版为 `1.1.16 (41)`、Bundle ID `com.lixingchen.DockWindowPreview`、`LSUIElement=true`、Developer ID 团队 `A94225N8T5`，hardened runtime、严格 codesign、App/DMG stapled ticket 与 Gatekeeper 均通过。
+- 最终安装版通过 Dock Accessibility 命中 TextEdit：layer 999 hover 面板完整显示 12 张真实窗口卡片，鼠标移出后面板关闭。本轮未重新点击卡片切换用户窗口，避免干扰现有工作；卡片显示、AX 内容和关闭行为均已验证。
+- 真实按下 Option+Tab 后 layer 1000 切换器正常出现，Esc 取消后前台 App 和聚焦窗口保持不变。菜单栏入口、`Y-Dock v1.1.16` 设置页、“正式安装版”、辅助功能与屏幕录制“已开启”以及 GitHub Release 更新入口均已复核。
 
 - 重做 Y-Dock 菜单栏图标为透明 `18 x 18` template image：两个错位窗口轮廓表达多窗口预览，底部圆头横线表达 Dock，替代原来视觉偏重的实心标记。
 - 保持 `LSUIElement=true` 和菜单栏后台工具形态不变，不修改 Y-Dock 应用 Logo；新模板图标会跟随 macOS 自动适配浅色/深色菜单栏。
