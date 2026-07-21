@@ -16,7 +16,8 @@
 - 最终无签名验证通过：扩展后的 standalone 测试分别编译并运行于 thin `arm64` 与 `x86_64`，全部通过；两种架构的 Release App 也分别使用独立 `/tmp` DerivedData、`ARCHS=<arch>`、`ONLY_ACTIVE_ARCH=YES` 构建成功，Info.plist 均为 `1.1.19 (44)`，主可执行文件分别严格为对应单一架构。两次构建仅出现未依赖 AppIntents 时跳过元数据提取的 Xcode 提示。
 - 从最终发布源码提交 `e8d2eff` 运行 `release.sh` 成功：两个架构的 Debug/Release App、App ZIP、DMG 均使用隔离路径，分别完成 Developer ID 签名、公证、staple、Gatekeeper、`hdiutil verify`、最终只读挂载和精确 thin 架构复核。唯一最终 arm64 DMG 为 `1,616,914` bytes，SHA256 `5d3fac2e9411951baf21ab0ddf14c107cf579306a3c3fc8d456d615226341584`；x86_64 DMG 为 `1,642,796` bytes，SHA256 `1efc55af5e3cb42409577e63c8432377e17617316c935db309db70901949c62e`；此前重新生成前的摘要已作废，不得用于上传或校验。
 - 从上述最终 arm64 DMG 以可回滚方式覆盖安装 `/Applications/Y-Dock.app`，确认 `1.1.19 (44)`、Team ID `A94225N8T5`、严格 codesign、stapled ticket、Gatekeeper 与 arm64 thin 架构通过并恢复后台运行；上述 x86_64 最终 DMG 中严格 thin 的 App 通过 Rosetta translated 模式短暂启动冒烟后已终止，镜像和临时挂载点已清理。
-- 发布源码提交和 tag `v1.1.19` 已推送；GitHub Draft Release 已严格先上传 arm64、确认其为首个且唯一 DMG 后再上传 x86_64，远端两份资产的名称、顺序、bytes、SHA256 digest 和真实换行 release notes 均与上述最终文件一致。Draft 尚未公开，公开后仍须复核 latest API 首个 `.dmg` 为 arm64。本轮未读取或输出公证/GitHub 凭据。
+- 发布源码提交和 tag `v1.1.19` 已推送；GitHub Draft Release 已严格先上传 arm64、确认其为首个且唯一 DMG 后再上传 x86_64，远端两份资产的名称、顺序、bytes、SHA256 digest 和真实换行 release notes 均与上述最终文件一致。公开前的 Draft 核验阶段未读取或输出公证/GitHub 凭据。
+- 完成 `v1.1.19` 正式发布闭环：Release `https://github.com/Rainchen537/Y-Dock/releases/tag/v1.1.19` 已公开；GitHub latest-release API 确认返回 tag `v1.1.19`，且恰好包含 arm64、x86_64 两份 DMG，首个 `.dmg` 仍为 arm64，远端顺序、bytes 与 SHA256 digest 均未变化。远端 tag 解析结果与本地 `e8d2eff` 发布源码提交一致；后续维护记录提交不移动 tag。
 - 从已提交源码重新生成最终双架构包时，Apple CloudKit ticket 服务曾在 x86_64 DMG staple 返回 SSL `-1200`，下一轮又遇到签名时间戳服务暂时不可用；两次均在写入 dist 前安全失败。`release.sh` 现对带时间戳的签名和 App/DMG staple 增加最多 4 次有限退避重试，持续失败仍停止发布，不降低签名、公证或验证要求。
 
 ## 2026-07-21
