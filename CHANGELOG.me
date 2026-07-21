@@ -18,6 +18,9 @@
 - 使用 6 个 disposable Probe 窗口复测 Dock hover：连续 8 次从 Dock 外移动到同一图标都无需点击即可出现，测得 `min=110ms / avg=152ms / max=204ms`；layer 999 截图确认先显示面板并完成后台缩略图更新，多行布局为上方 2 张、下方 4 张，符合“上少下多”。
 - 使用独立键盘事件 Probe 真实发送 Option-down、Tab、Esc key-down、Esc autorepeat、Esc key-up、Option-up：Y-Dock 日志确认首次 `selected index: 1`，底层 Probe 未生成任何 Esc 事件记录，取消后前台 Probe 窗口保持不变。
 - 完成 `v1.1.17` 发布闭环：对应源码提交 `63d0e0745114d3529af0533545d8b7be09a4b78a`、tag `v1.1.17`、Release `https://github.com/Rainchen537/Y-Dock/releases/tag/v1.1.17`。GitHub Release 标题、真实换行说明、资产 `Y-Dock-v1.1.17.dmg`、下载链接和 `sha256:b6275ad3102c60d45124762fd0702f6457c3e63646c977cf7da4004d6c66bb39` digest 均已复核一致；tag 保持指向与最终 DMG 对应的源码提交，发布记录使用后续文档提交，不移动 tag。
+- `Option+Tab` 卡片新增 hover 关闭入口：关闭按钮与左上角 `25×25` App icon 完全重合，使用黑色 `0.50 alpha` 半透明遮罩和白色 X，不使用红色、额外边框或独立圆形按钮。
+- 点击关闭按钮复用 Accessibility 的窗口关闭能力，不触发卡片激活；关闭后按 window ID 保留原选中项，关闭当前选中项时选择相邻窗口，最后一项关闭后退出会话。当前会话记录已关闭 window ID，避免异步补入最小化窗口时重新出现。
+- 准备发布 `v1.1.18`，版本号为 `MARKETING_VERSION=1.1.18`、`CURRENT_PROJECT_VERSION=43`；README、公开 changelog 和维护说明已同步。
 
 ## 2026-07-20
 

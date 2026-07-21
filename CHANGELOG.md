@@ -2,6 +2,12 @@
 
 All notable Y-Dock release changes are tracked here.
 
+## v1.1.18 - 2026-07-21
+
+- Added a hover-only close control to each `Option+Tab` window card, rendered as a neutral translucent overlay directly over the app icon.
+- Closing a card now closes only that window without activating it, keeps the switcher session open, and preserves the selected window whenever possible.
+- Prevented asynchronously collected minimized windows from re-adding a window that was already closed during the current switcher session.
+
 ## v1.1.17 - 2026-07-21
 
 - Stabilized Dock hover detection with trailing-edge mouse resolution, short Accessibility hit-test retries, transient-miss tolerance, and a larger auto-hidden or magnified Dock detection region.

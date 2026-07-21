@@ -5,7 +5,7 @@ import QuartzCore
 private struct OptionTabItem {
     let window: WindowInfo
     let appIcon: NSImage
-    let thumbnail: NSImage
+    var thumbnail: NSImage
     let thumbnailSize: NSSize
 }
 
@@ -460,6 +460,9 @@ final class OptionTabSwitcher {
         panel.onClickItem = { [weak self] index in
             self?.activateSelection(at: index)
         }
+        panel.onCloseItem = { [weak self] index in
+            self?.closeItem(at: index)
+        }
         return panel
     }()
 
@@ -478,6 +481,7 @@ final class OptionTabSwitcher {
     private var isStarted = false
     private var isSwitching = false
     private var items: [OptionTabItem] = []
+    private var excludedWindowIDs: Set<CGWindowID> = []
     private var selectedIndex = 0
     private var sessionID = 0
     private var tabRepeatTimer: Timer?
@@ -817,6 +821,7 @@ final class OptionTabSwitcher {
             return
         }
 
+        excludedWindowIDs.removeAll()
         items = makeItems(from: windows)
         guard !items.isEmpty else {
             NSSound.beep()
@@ -858,6 +863,40 @@ final class OptionTabSwitcher {
         windowActivator.activate(window)
     }
 
+    private func closeItem(at index: Int) {
+        guard isSwitching, items.indices.contains(index) else { return }
+
+        let window = items[index].window
+        guard windowActivator.close(window) else {
+            NSSound.beep()
+            return
+        }
+
+        let selectedWindowID = items.indices.contains(selectedIndex)
+            ? items[selectedIndex].window.windowID
+            : nil
+        excludedWindowIDs.insert(window.windowID)
+        items.remove(at: index)
+
+        guard !items.isEmpty else {
+            resetState()
+            return
+        }
+
+        if let selectedWindowID,
+           let preservedIndex = items.firstIndex(where: { $0.window.windowID == selectedWindowID }) {
+            selectedIndex = preservedIndex
+        } else {
+            selectedIndex = min(index, items.count - 1)
+        }
+
+        sessionID += 1
+        let currentSessionID = sessionID
+        panel.removeItem(at: index, selectedIndex: selectedIndex)
+        loadThumbnails(for: items, sessionID: currentSessionID)
+        loadExpandedWindowListIfNeeded(sessionID: currentSessionID)
+    }
+
     private func cancelSelection() {
         guard isSwitching || panel.isVisible else { return }
         resetState()
@@ -869,6 +908,7 @@ final class OptionTabSwitcher {
         panel.hide()
         isSwitching = false
         items = []
+        excludedWindowIDs.removeAll()
         selectedIndex = 0
     }
 
@@ -972,8 +1012,12 @@ final class OptionTabSwitcher {
                     return
                 }
 
-                self.focusHistory.seedVisibleZOrder(collectedWindows)
-                let windows = self.focusHistory.windowsInAltTabOrder(collectedWindows)
+                let availableWindows = collectedWindows.filter {
+                    !self.excludedWindowIDs.contains($0.windowID)
+                }
+                guard !availableWindows.isEmpty else { return }
+                self.focusHistory.seedVisibleZOrder(availableWindows)
+                let windows = self.focusHistory.windowsInAltTabOrder(availableWindows)
                 let currentIDs = self.items.map(\.window.windowID)
                 let nextIDs = windows.map(\.windowID)
                 guard currentIDs != nextIDs else { return }
@@ -1018,6 +1062,7 @@ final class OptionTabSwitcher {
 
 private final class OptionTabPanel: NSPanel {
     var onClickItem: ((Int) -> Void)?
+    var onCloseItem: ((Int) -> Void)?
 
     private enum Metrics {
         static let outerPadding: CGFloat = 22
@@ -1080,8 +1125,21 @@ private final class OptionTabPanel: NSPanel {
     }
 
     func updateThumbnail(_ image: NSImage, for windowID: CGWindowID) {
-        guard let card = cardViews.first(where: { $0.windowID == windowID }) else { return }
-        card.updateThumbnail(image)
+        guard let index = currentItems.firstIndex(where: { $0.window.windowID == windowID }) else {
+            return
+        }
+
+        currentItems[index].thumbnail = image
+        cardViews[index].updateThumbnail(image)
+    }
+
+    func removeItem(at index: Int, selectedIndex: Int) {
+        guard currentItems.indices.contains(index) else { return }
+
+        currentItems.remove(at: index)
+        rebuildCards()
+        setFrame(centeredFrame(size: preferredPanelSize(for: currentItems)), display: true)
+        updateSelection(selectedIndex)
     }
 
     func containsScreenPoint(_ point: NSPoint) -> Bool {
@@ -1155,6 +1213,9 @@ private final class OptionTabPanel: NSPanel {
                 let card = OptionTabCardView(item: item)
                 card.onClick = { [weak self] in
                     self?.onClickItem?(globalIndex)
+                }
+                card.onClose = { [weak self] in
+                    self?.onCloseItem?(globalIndex)
                 }
                 row.addArrangedSubview(card)
                 cardViews.append(card)
@@ -1251,8 +1312,34 @@ private final class OptionTabPanel: NSPanel {
     }
 }
 
+private final class OptionTabCloseButton: NSButton {
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+
+        image = NSImage(systemSymbolName: "xmark", accessibilityDescription: "关闭窗口")
+        imagePosition = .imageOnly
+        symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 10, weight: .bold)
+        bezelStyle = .regularSquare
+        isBordered = false
+        contentTintColor = NSColor.white.withAlphaComponent(0.92)
+        toolTip = "关闭窗口"
+        wantsLayer = true
+        layer?.cornerRadius = 6
+        layer?.backgroundColor = NSColor.black.withAlphaComponent(0.50).cgColor
+    }
+
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+        true
+    }
+}
+
 private final class OptionTabCardView: NSView {
     var onClick: (() -> Void)?
+    var onClose: (() -> Void)?
 
     var isSelected = false {
         didSet {
@@ -1269,14 +1356,17 @@ private final class OptionTabCardView: NSView {
         static let thumbnailCornerRadius: CGFloat = 9
         static let compactTitleWidth: CGFloat = 92
         static let titleFontSize: CGFloat = 13.5
+        static let closeButtonSize: CGFloat = 25
     }
 
     private let item: OptionTabItem
     private let iconView = NSImageView()
     private let titleLabel = NSTextField(labelWithString: "")
     private let thumbnailView = NSImageView()
+    private let closeButton = OptionTabCloseButton()
     private var expandedTitleLeadingConstraint: NSLayoutConstraint?
     private var compactTitleLeadingConstraint: NSLayoutConstraint?
+    private var trackingAreaRef: NSTrackingArea?
 
     init(item: OptionTabItem) {
         self.item = item
@@ -1303,6 +1393,31 @@ private final class OptionTabCardView: NSView {
 
     override var intrinsicContentSize: NSSize {
         Self.preferredSize(for: item)
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+
+        if let trackingAreaRef {
+            removeTrackingArea(trackingAreaRef)
+        }
+
+        let area = NSTrackingArea(
+            rect: bounds,
+            options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+            owner: self,
+            userInfo: nil
+        )
+        trackingAreaRef = area
+        addTrackingArea(area)
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        closeButton.isHidden = false
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        closeButton.isHidden = true
     }
 
     override func mouseDown(with event: NSEvent) {
@@ -1358,9 +1473,15 @@ private final class OptionTabCardView: NSView {
         thumbnailView.layer?.borderWidth = 1
         thumbnailView.layer?.borderColor = NSColor.white.withAlphaComponent(0.1).cgColor
 
+        closeButton.translatesAutoresizingMaskIntoConstraints = false
+        closeButton.target = self
+        closeButton.action = #selector(closeButtonClicked)
+        closeButton.isHidden = true
+
         addSubview(iconView)
         addSubview(titleLabel)
         addSubview(thumbnailView)
+        addSubview(closeButton)
 
         let expandedTitleLeadingConstraint = titleLabel.leadingAnchor.constraint(equalTo: iconView.trailingAnchor, constant: Metrics.titleGap)
         let compactTitleLeadingConstraint = titleLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: Metrics.titleHorizontalPadding)
@@ -1374,6 +1495,11 @@ private final class OptionTabCardView: NSView {
             iconView.widthAnchor.constraint(equalToConstant: Metrics.iconSize),
             iconView.heightAnchor.constraint(equalToConstant: Metrics.iconSize),
 
+            closeButton.leadingAnchor.constraint(equalTo: leadingAnchor, constant: Metrics.titleHorizontalPadding),
+            closeButton.centerYAnchor.constraint(equalTo: iconView.centerYAnchor),
+            closeButton.widthAnchor.constraint(equalToConstant: Metrics.closeButtonSize),
+            closeButton.heightAnchor.constraint(equalToConstant: Metrics.closeButtonSize),
+
             expandedTitleLeadingConstraint,
             titleLabel.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -Metrics.titleHorizontalPadding),
             titleLabel.centerYAnchor.constraint(equalTo: iconView.centerYAnchor),
@@ -1384,6 +1510,11 @@ private final class OptionTabCardView: NSView {
             thumbnailView.heightAnchor.constraint(equalToConstant: item.thumbnailSize.height),
             thumbnailView.bottomAnchor.constraint(equalTo: bottomAnchor)
         ])
+    }
+
+    @objc private func closeButtonClicked() {
+        closeButton.isHidden = true
+        onClose?()
     }
 
     private func configure() {
