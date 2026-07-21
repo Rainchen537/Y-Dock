@@ -13,7 +13,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Rainchen537/Y-Dock/releases/tag/v1.1.16">
+  <a href="https://github.com/Rainchen537/Y-Dock/releases/tag/v1.1.17">
     <img alt="Release" src="https://img.shields.io/github/v/release/Rainchen537/Y-Dock?style=for-the-badge&color=1f8fff">
   </a>
   <img alt="macOS" src="https://img.shields.io/badge/macOS-13%2B-111827?style=for-the-badge&logo=apple">
@@ -23,7 +23,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Rainchen537/Y-Dock/releases/download/v1.1.16/Y-Dock-v1.1.16.dmg">
+  <a href="https://github.com/Rainchen537/Y-Dock/releases/download/v1.1.17/Y-Dock-v1.1.17.dmg">
     <img alt="Download DMG" src="https://img.shields.io/badge/Download-DMG-2563EB?style=for-the-badge&logo=github">
   </a>
 </p>
@@ -39,7 +39,7 @@
 | 🪟 Dock 悬浮预览 | 鼠标停在 Dock 中某个 App 图标上，弹出该 App 的窗口预览面板。 |
 | 🧩 Dock 拼接式卡片 | Dock 悬浮预览去掉外层矩形容器，多窗口像 Windows 任务栏一样合并成一组。 |
 | ⚡ 快速切换窗口 | 点击任意缩略图，直接激活 App 并聚焦对应窗口。 |
-| ⌥ Option+Tab 切换 | 按住 `Option` 后按 `Tab` 呼出亚克力窗口切换器，严格按最近聚焦顺序排列并从第一张开始选择，按 `Esc` 取消。 |
+| ⌥ Option+Tab 切换 | 按住 `Option` 后按 `Tab` 呼出亚克力窗口切换器，严格按最近聚焦顺序排列并默认选择第二张（仅一张时选择第一张），按 `Esc` 安全取消。 |
 | 🚀 异步缩略图 | 首屏先显示轻量卡片，缩略图后台补齐，减少热键和 Dock 横扫卡顿。 |
 | 💤 唤回最小化窗口 | 被最小化的窗口也会出现在预览里，点击后自动恢复并置前。 |
 | 🎚 卡片窗口控制 | hover 某个窗口卡片，左上角显示退出 App、关闭窗口、最小化窗口三颗控制按钮。 |
@@ -53,7 +53,7 @@
 ## 📦 安装
 
 1. 下载最新版 DMG：  
-   [Y-Dock-v1.1.16.dmg](https://github.com/Rainchen537/Y-Dock/releases/download/v1.1.16/Y-Dock-v1.1.16.dmg)
+   [Y-Dock-v1.1.17.dmg](https://github.com/Rainchen537/Y-Dock/releases/download/v1.1.17/Y-Dock-v1.1.17.dmg)
 2. 打开 DMG。
 3. 将 `Y-Dock.app` 拖到 `Applications`。
 4. 启动 `Y-Dock`，按提示开启权限。
@@ -92,7 +92,7 @@ System Settings
 3. 等待约 `100ms`，预览面板会自动弹出。
 4. 点击缩略图切换到对应窗口。
 5. hover 某张卡片，左上角可退出所属 App、关闭窗口或最小化窗口。
-6. 也可以按住 `Option` 并按 `Tab` 打开窗口切换器；首次呼出选中 MRU 列表的第一张，继续按 `Tab` 循环，松开 `Option` 后切到当前选中的窗口，按 `Esc` 可取消。
+6. 也可以按住 `Option` 并按 `Tab` 打开窗口切换器；首次呼出默认选中 MRU 列表的第二张，只有一张窗口时回退到第一张，继续按 `Tab` 循环，松开 `Option` 后切到当前选中的窗口。按 `Esc` 会取消并吞掉对应按键事件，不影响底层窗口。
 
 ## ⚙️ 设置
 

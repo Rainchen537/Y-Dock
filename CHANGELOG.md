@@ -2,6 +2,14 @@
 
 All notable Y-Dock release changes are tracked here.
 
+## v1.1.17 - 2026-07-21
+
+- Stabilized Dock hover detection with trailing-edge mouse resolution, short Accessibility hit-test retries, transient-miss tolerance, and a larger auto-hidden or magnified Dock detection region.
+- Made Dock preview panels appear on schedule with lightweight cached or placeholder cards while thumbnails load in the background.
+- Changed wrapped Dock preview rows to place fewer cards above and fuller rows below.
+- Restored Windows-style `Option+Tab` startup selection: the second MRU window is selected when available, with a safe single-window fallback.
+- Filtered `Esc` key-down, auto-repeat, and matching key-up while the switcher is open so cancellation does not reach the underlying app.
+
 ## v1.1.16 - 2026-07-20
 
 - Rebuilt the drag-to-install DMG with a light high-contrast 2x Retina background, keeping Finder's black app labels crisp and readable in light and dark system appearances.

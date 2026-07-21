@@ -4,6 +4,20 @@
 
 不要在这里记录 token、证书密码、Apple ID、notary 密码等敏感信息。
 
+## 2026-07-21
+
+- 修复 Dock hover 偶发延迟不稳或鼠标停住后不再恢复的问题：鼠标节流改为保留最后一次位置的 trailing-edge 解析；Dock Accessibility 短暂 miss 会在有限时间内重试，并为已识别候选保留短暂容错，不再立刻清空候选和重启悬停计时。自动隐藏或放大 Dock 的兜底检测厚度从 96 扩到 128 points，AX 坐标优先使用正确的顶部原点换算点。
+- Dock 预览改为先用缓存或轻量占位卡片准时显示，真实缩略图在后台逐张更新，避免主线程同步截图让实际出现时间随窗口数量波动。
+- 多行 Dock 窗口卡片改为从底部向上分组，保持窗口顺序的同时形成“上少下多”的布局。
+- `Option+Tab` 恢复 Windows 风格首次选择：正向呼出在存在多个窗口时默认选中第二张，只有一张时安全回退到第一张；后台补入最小化窗口后继续按 window ID 保持当前选择。
+- `Option+Tab` 新增过滤型 `CGEventTap`：切换器打开时吞掉 Esc key-down、自动重复及对应 key-up，再取消面板，避免 Esc 到达底层 App；event tap 不可用时不会打开无法安全取消的切换器。
+- 简化根目录及 Y-Clip、Y-Dock、Y-Keys 的 `AGENTS.md`：只处理实际修改的项目，共享框架只有同步进具体 App 才扩大范围，验证按风险和受影响路径执行，纯文档/分析/本地实验不自动触发 App 发布。本次用户可见代码仅修改 Y-Dock，因此只构建、验证和发布 Y-Dock，不重新发布 Y-Clip 或 Y-Keys。
+- 准备发布 `v1.1.17`，版本号为 `MARKETING_VERSION=1.1.17`、`CURRENT_PROJECT_VERSION=42`；README、公开 changelog 和维护说明已同步。
+- Debug 与 Release 无签名构建均通过；基于最终源码运行 `release.sh` 完成 App/DMG 双公证与装订，App 公证 ID 为 `fdf97830-247a-4736-afd2-89db0bfec496`，DMG 公证 ID 为 `90baa57c-c75a-4d71-9447-534db3e2cc7e`。最终 `Y-Dock-v1.1.17.dmg` SHA256 为 `b6275ad3102c60d45124762fd0702f6457c3e63646c977cf7da4004d6c66bb39`，Developer ID、hardened runtime、严格签名、App/DMG stapled ticket、Gatekeeper 与 `hdiutil verify` 均通过。
+- 从最终 DMG 覆盖安装 `/Applications/Y-Dock.app`，确认正式安装版为 `1.1.17 (42)`、Bundle ID `com.lixingchen.DockWindowPreview`、`LSUIElement=true`、Developer ID 团队 `A94225N8T5`，且只运行一个正式进程。
+- 使用 6 个 disposable Probe 窗口复测 Dock hover：连续 8 次从 Dock 外移动到同一图标都无需点击即可出现，测得 `min=110ms / avg=152ms / max=204ms`；layer 999 截图确认先显示面板并完成后台缩略图更新，多行布局为上方 2 张、下方 4 张，符合“上少下多”。
+- 使用独立键盘事件 Probe 真实发送 Option-down、Tab、Esc key-down、Esc autorepeat、Esc key-up、Option-up：Y-Dock 日志确认首次 `selected index: 1`，底层 Probe 未生成任何 Esc 事件记录，取消后前台 Probe 窗口保持不变。
+
 ## 2026-07-20
 
 - 同步新版共享 APFS DMG 框架：背景改为浅色高对比设计并默认生成 `1280×800 / 144 DPI` 的 2x Retina PNG，按 App 与 Applications 的真实 Finder 坐标绘制居中箭头；安装窗口显式隐藏工具栏、状态栏、路径栏和标签页栏，防止内容区高度变化造成图标与箭头偏移。

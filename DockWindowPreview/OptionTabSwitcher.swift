@@ -468,8 +468,9 @@ final class OptionTabSwitcher {
     private var backwardHotKey: EventHotKeyRef?
     private var globalFlagsMonitor: Any?
     private var localFlagsMonitor: Any?
-    private var globalKeyMonitor: Any?
-    private var localKeyMonitor: Any?
+    private var escapeEventTap: CFMachPort?
+    private var escapeEventTapSource: CFRunLoopSource?
+    private var suppressedKeyCodes: Set<Int64> = []
     private var globalKeyUpMonitor: Any?
     private var localKeyUpMonitor: Any?
     private var globalMouseMonitor: Any?
@@ -506,6 +507,7 @@ final class OptionTabSwitcher {
         focusHistory.start()
         installHotKeyHandler()
         registerHotKeys()
+        installEscapeEventTap()
         installFlagsMonitors()
         isStarted = true
         DWLog("Option+Tab switcher started")
@@ -530,11 +532,11 @@ final class OptionTabSwitcher {
         if let localFlagsMonitor {
             NSEvent.removeMonitor(localFlagsMonitor)
         }
-        if let globalKeyMonitor {
-            NSEvent.removeMonitor(globalKeyMonitor)
+        if let escapeEventTap {
+            CGEvent.tapEnable(tap: escapeEventTap, enable: false)
         }
-        if let localKeyMonitor {
-            NSEvent.removeMonitor(localKeyMonitor)
+        if let escapeEventTapSource {
+            CFRunLoopRemoveSource(CFRunLoopGetMain(), escapeEventTapSource, .commonModes)
         }
         if let globalKeyUpMonitor {
             NSEvent.removeMonitor(globalKeyUpMonitor)
@@ -554,8 +556,9 @@ final class OptionTabSwitcher {
         eventHandler = nil
         globalFlagsMonitor = nil
         localFlagsMonitor = nil
-        globalKeyMonitor = nil
-        localKeyMonitor = nil
+        escapeEventTapSource = nil
+        escapeEventTap = nil
+        suppressedKeyCodes.removeAll()
         globalKeyUpMonitor = nil
         localKeyUpMonitor = nil
         globalMouseMonitor = nil
@@ -640,6 +643,42 @@ final class OptionTabSwitcher {
         }
     }
 
+    @discardableResult
+    private func installEscapeEventTap() -> Bool {
+        if let escapeEventTap,
+           CFMachPortIsValid(escapeEventTap),
+           CGEvent.tapIsEnabled(tap: escapeEventTap) {
+            return true
+        }
+
+        if let escapeEventTapSource {
+            CFRunLoopRemoveSource(CFRunLoopGetMain(), escapeEventTapSource, .commonModes)
+        }
+        escapeEventTapSource = nil
+        escapeEventTap = nil
+
+        let mask = (1 << CGEventType.keyDown.rawValue) | (1 << CGEventType.keyUp.rawValue)
+        guard let tap = CGEvent.tapCreate(
+            tap: .cgSessionEventTap,
+            place: .headInsertEventTap,
+            options: .defaultTap,
+            eventsOfInterest: CGEventMask(mask),
+            callback: Self.escapeEventTapCallback,
+            userInfo: Unmanaged.passUnretained(self).toOpaque()
+        ) else {
+            DWLog("Failed to install Option+Tab Esc suppression event tap")
+            return false
+        }
+
+        escapeEventTap = tap
+        escapeEventTapSource = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
+        if let escapeEventTapSource {
+            CFRunLoopAddSource(CFRunLoopGetMain(), escapeEventTapSource, .commonModes)
+        }
+        CGEvent.tapEnable(tap: tap, enable: true)
+        return true
+    }
+
     private func installFlagsMonitors() {
         globalFlagsMonitor = NSEvent.addGlobalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
             DispatchQueue.main.async {
@@ -649,19 +688,6 @@ final class OptionTabSwitcher {
 
         localFlagsMonitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
             self?.handleFlagsChanged(event.modifierFlags)
-            return event
-        }
-
-        globalKeyMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            DispatchQueue.main.async {
-                _ = self?.handleKeyDown(event)
-            }
-        }
-
-        localKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            if self?.handleKeyDown(event) == true {
-                return nil
-            }
             return event
         }
 
@@ -694,6 +720,11 @@ final class OptionTabSwitcher {
     }
 
     private func handleHotKey(id: UInt32) {
+        guard installEscapeEventTap() else {
+            NSSound.beep()
+            return
+        }
+
         switch HotKeyID(rawValue: id) {
         case .forward:
             showOrAdvance(direction: 1)
@@ -717,14 +748,31 @@ final class OptionTabSwitcher {
         }
     }
 
-    @discardableResult
-    private func handleKeyDown(_ event: NSEvent) -> Bool {
-        guard isSwitching, event.keyCode == UInt16(kVK_Escape) else {
+    private func shouldSuppressEscapeEvent(type: CGEventType, event: CGEvent) -> Bool {
+        if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+            if let escapeEventTap {
+                CGEvent.tapEnable(tap: escapeEventTap, enable: true)
+            }
             return false
         }
 
-        cancelSelection()
-        return true
+        let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
+        guard keyCode == Int64(kVK_Escape) else { return false }
+
+        switch type {
+        case .keyDown:
+            if suppressedKeyCodes.contains(keyCode) {
+                return true
+            }
+            guard isSwitching else { return false }
+            suppressedKeyCodes.insert(keyCode)
+            cancelSelection()
+            return true
+        case .keyUp:
+            return suppressedKeyCodes.remove(keyCode) != nil
+        default:
+            return false
+        }
     }
 
     @discardableResult
@@ -778,7 +826,7 @@ final class OptionTabSwitcher {
         isSwitching = true
         sessionID += 1
         let currentSessionID = sessionID
-        selectedIndex = direction > 0 ? 0 : max(0, items.count - 1)
+        selectedIndex = direction > 0 ? min(1, items.count - 1) : max(0, items.count - 1)
         let orderSummary = windows.map { "\($0.ownerName)#\($0.windowID)" }.joined(separator: " > ")
         DWLog("Option+Tab MRU order: \(orderSummary); selected index: \(selectedIndex)")
 
@@ -956,6 +1004,15 @@ final class OptionTabSwitcher {
         let maxWidth = 240 * cardScale
         let width = max(1, min(maxWidth, height * aspect))
         return CGSize(width: width, height: height)
+    }
+
+    private static let escapeEventTapCallback: CGEventTapCallBack = { _, type, event, userInfo in
+        guard let userInfo else { return Unmanaged.passUnretained(event) }
+        let switcher = Unmanaged<OptionTabSwitcher>.fromOpaque(userInfo).takeUnretainedValue()
+        if switcher.shouldSuppressEscapeEvent(type: type, event: event) {
+            return nil
+        }
+        return Unmanaged.passUnretained(event)
     }
 }
 

@@ -8,7 +8,7 @@
 - 每次功能、修复、发布或发布事故处理后，追加更新到 `CHANGELOG.me`。
 - 用户可见 release 必须同步更新 `CHANGELOG.md` 和 GitHub Release。
 - 发布 DMG 必须签名、公证、staple，并在本机安装验证。
-- 每次修改本仓库的任务都必须发布新版本并从最终 DMG 覆盖安装本机 App；只有用户明确要求不发布时才可跳过。
+- 只在本仓库实际发生需要分发的 App 改动时发布 Y-Dock；其他 App、根目录文档或未同步进本仓库的共享框架变化不触发本项目发布，分析、纯文档和本地实验按任务范围处理。
 - 优先通过 GitHub MCP / GitHub App 创建 GitHub Release 和上传 DMG；不可用时再用 `gh` CLI 或 GitHub Releases REST API。
 
 ## Product Summary
@@ -24,8 +24,8 @@ Core behavior:
 - Registers `Option+Tab` with public Carbon hotkey APIs for a Windows-style window switcher.
 - Keeps preview UI lightweight: show panels quickly, then fill thumbnails from background queues where possible.
 - Uses different preview layouts by context: Dock hover previews use compact joined cards, while `Option+Tab` uses a single acrylic switcher panel with independent rounded cards and centered wrapping rows.
-- `Option+Tab` cards intentionally show only the window title. Do not add a repeated app-name subtitle; `Esc` cancels the active switcher without activating a window.
-- `Option+Tab` orders every visible and minimized window by the in-process MRU focus history. The first invocation selects the first card; current CoreGraphics Z-order is only a stable fallback for windows that have no recorded focus event yet.
+- `Option+Tab` cards intentionally show only the window title. Do not add a repeated app-name subtitle; `Esc` cancels the active switcher without activating a window, and its key-down, repeats, and matching key-up are filtered before reaching the underlying App.
+- `Option+Tab` orders every visible and minimized window by the in-process MRU focus history. The first forward invocation selects the second card when available, matching the Windows return-to-previous-window behavior; a single-window list safely selects its first card. Current CoreGraphics Z-order is only a stable fallback for windows that have no recorded focus event yet.
 - Focus history listens for public Accessibility focused/main-window notifications and keeps the existing lightweight poll as a fallback. Browser titles may differ between AX and CGWindow because CGWindow truncates them with ellipses, so matching must preserve ellipsis-aware comparison.
 - `Option+Tab` keeps cycling while Tab is physically held, stops repeat on Tab release, commits on Option release, and cancels when the user clicks outside the switcher panel.
 - `Option+Tab` should include minimized windows in the initial list when Accessibility is trusted. Avoid title/size-only de-duping for minimized windows because separate browser or document windows often share similar metadata.

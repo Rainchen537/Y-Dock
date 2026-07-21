@@ -76,6 +76,9 @@ final class PreviewPanel: NSPanel {
     private let rootView = PreviewRootView()
     private let stackView = NSStackView()
     private let focusOverlay = FocusOverlayController()
+    private let thumbnailQueue = DispatchQueue(label: "com.ydock.hover-preview.thumbnails", qos: .userInitiated)
+    private var cardViewsByWindowID: [CGWindowID: WindowPreviewCardView] = [:]
+    private var contentGeneration = 0
 
     private struct PreviewItem {
         let window: WindowInfo
@@ -126,6 +129,8 @@ final class PreviewPanel: NSPanel {
         currentApp = app
         currentAnchor = anchor
         currentDockEdge = dockEdge
+        contentGeneration += 1
+        let generation = contentGeneration
 
         let items = makePreviewItems(for: windows)
         rebuildContent(items: items, app: app)
@@ -137,9 +142,12 @@ final class PreviewPanel: NSPanel {
         let targetFrame = positionedFrame(size: targetSize, anchor: anchor, dockEdge: dockEdge)
         setFrame(targetFrame, display: true)
         orderFrontRegardless()
+        loadThumbnails(for: items, generation: generation)
     }
 
     func hide() {
+        contentGeneration += 1
+        cardViewsByWindowID.removeAll()
         focusOverlay.hide()
         orderOut(nil)
         currentWindows = []
@@ -207,12 +215,34 @@ final class PreviewPanel: NSPanel {
     private func makePreviewItems(for windows: [WindowInfo]) -> [PreviewItem] {
         windows.map { window in
             let size = settings.thumbnailSize(for: window)
-            let thumbnail = thumbnailProvider.thumbnail(for: window, targetSize: size)
+            let thumbnail = thumbnailProvider.cachedPreviewThumbnail(for: window, targetSize: size)
+                ?? thumbnailProvider.placeholderThumbnail(for: window, targetSize: size)
             return PreviewItem(window: window, thumbnail: thumbnail, thumbnailSize: size)
         }
     }
 
+    private func loadThumbnails(for items: [PreviewItem], generation: Int) {
+        thumbnailQueue.async { [weak self] in
+            guard let self else { return }
+
+            for item in items {
+                let image = self.thumbnailProvider.thumbnail(for: item.window, targetSize: item.thumbnailSize)
+                DispatchQueue.main.async { [weak self] in
+                    guard
+                        let self,
+                        self.contentGeneration == generation,
+                        self.currentWindows.contains(where: { $0.windowID == item.window.windowID })
+                    else {
+                        return
+                    }
+                    self.cardViewsByWindowID[item.window.windowID]?.updateThumbnail(image)
+                }
+            }
+        }
+    }
+
     private func rebuildContent(items: [PreviewItem], app: NSRunningApplication) {
+        cardViewsByWindowID.removeAll()
         stackView.arrangedSubviews.forEach { view in
             stackView.removeArrangedSubview(view)
             view.removeFromSuperview()
@@ -262,6 +292,7 @@ final class PreviewPanel: NSPanel {
                 card.onQuitApplication = { [weak self] selectedWindow in
                     self?.onQuitApplication?(selectedWindow)
                 }
+                cardViewsByWindowID[item.window.windowID] = card
                 row.addArrangedSubview(card)
             }
 
@@ -275,28 +306,28 @@ final class PreviewPanel: NSPanel {
         let availableWidth = (NSScreen.main?.visibleFrame.width ?? 1440) - 32
         let maxContentWidth = max(280, availableWidth - 16)
         let spacing = PreviewPanelLayout.cardSpacing
-        var groups: [[PreviewItem]] = []
+        var groupsFromBottom: [[PreviewItem]] = []
         var currentGroup: [PreviewItem] = []
         var currentWidth: CGFloat = 0
 
-        for item in items {
+        for item in items.reversed() {
             let itemWidth = cardSize(for: item).width
-            let nextWidth = currentGroup.isEmpty ? itemWidth : currentWidth + spacing + itemWidth
+            let nextWidth = currentGroup.isEmpty ? itemWidth : itemWidth + spacing + currentWidth
             if !currentGroup.isEmpty, (currentGroup.count >= 4 || nextWidth > maxContentWidth) {
-                groups.append(currentGroup)
+                groupsFromBottom.append(currentGroup)
                 currentGroup = [item]
                 currentWidth = itemWidth
             } else {
-                currentGroup.append(item)
+                currentGroup.insert(item, at: 0)
                 currentWidth = nextWidth
             }
         }
 
         if !currentGroup.isEmpty {
-            groups.append(currentGroup)
+            groupsFromBottom.append(currentGroup)
         }
 
-        return groups
+        return Array(groupsFromBottom.reversed())
     }
 
     private func preferredPanelSize(for items: [PreviewItem]) -> NSSize {
@@ -635,6 +666,10 @@ private final class WindowPreviewCardView: NSView {
 
     required init?(coder: NSCoder) {
         nil
+    }
+
+    func updateThumbnail(_ image: NSImage) {
+        imageView.image = image
     }
 
     override var intrinsicContentSize: NSSize {

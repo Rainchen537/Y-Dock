@@ -80,6 +80,10 @@ final class WindowThumbnailProvider {
         return image
     }
 
+    func cachedPreviewThumbnail(for window: WindowInfo, targetSize: NSSize) -> NSImage? {
+        cachedPreviewThumbnail(for: previewThumbnailKey(for: window, targetSize: targetSize))
+    }
+
     func placeholderThumbnail(for window: WindowInfo, targetSize: NSSize, reason: String = "正在载入") -> NSImage {
         placeholderImage(title: window.title, reason: reason, size: targetSize)
     }

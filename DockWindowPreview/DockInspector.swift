@@ -63,7 +63,7 @@ final class DockInspector {
             detectedEdge = dockOrientationFromDefaults() ?? .bottom
         }
 
-        let fallbackThickness: CGFloat = 96
+        let fallbackThickness: CGFloat = 128
         let margin: CGFloat = 10
         let regionFrame: CGRect
 
@@ -231,7 +231,7 @@ final class DockInspector {
         if abs(flipped.y - point.y) < 0.5 {
             return [point]
         }
-        return [point, flipped]
+        return [flipped, point]
     }
 
     private func screen(containing point: NSPoint) -> NSScreen? {
