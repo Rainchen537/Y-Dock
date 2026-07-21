@@ -14,9 +14,9 @@
 - 首次双资产迁移使用 Draft Release：先上传 `arm64` 并确认它是草稿中的首个 `.dmg`，再上传 `x86_64`；两份资产和 digest 完整验证后才公开，并通过 GitHub latest-release API 确认首个 `.dmg` 仍为 arm64，以兼容仍会选择首个 DMG 的 v1.1.18 updater。Release 只能包含这两个 thin 包，不得上传通用名或 universal DMG。
 - 准备 `v1.1.19`，版本号更新为 `MARKETING_VERSION=1.1.19`、`CURRENT_PROJECT_VERSION=44`，README、AGENTS、AI_CONTEXT 和公开 changelog 已同步双架构资产名称与流程。
 - 最终无签名验证通过：扩展后的 standalone 测试分别编译并运行于 thin `arm64` 与 `x86_64`，全部通过；两种架构的 Release App 也分别使用独立 `/tmp` DerivedData、`ARCHS=<arch>`、`ONLY_ACTIVE_ARCH=YES` 构建成功，Info.plist 均为 `1.1.19 (44)`，主可执行文件分别严格为对应单一架构。两次构建仅出现未依赖 AppIntents 时跳过元数据提取的 Xcode 提示。
-- 正式运行最终 `release.sh` 成功：两个架构的 Debug/Release App、App ZIP、DMG 均使用隔离路径，分别完成 Developer ID 签名、公证、staple、Gatekeeper、`hdiutil verify`、最终只读挂载和精确 thin 架构复核。最终 arm64 DMG 为 `1,619,365` bytes，SHA256 `5129dbfde490552a345c9f6eceac1fe8bf4c6d1e6440a62ef553edb48fcabe50`；x86_64 DMG 为 `1,645,294` bytes，SHA256 `6da744c6b743039e7208981c34ea3e24c6a95ab1bd9c0c72cb801f8c2e3461f3`。
-- 从最终 arm64 DMG 以可回滚方式覆盖安装 `/Applications/Y-Dock.app`，确认 `1.1.19 (44)`、Team ID `A94225N8T5`、严格 codesign、stapled ticket、Gatekeeper 与 arm64 thin 架构通过并恢复后台运行；x86_64 最终 DMG 中严格 thin 的 App 通过 Rosetta 短暂启动冒烟后已终止，镜像和临时挂载点已清理。
-- 本轮未读取或输出公证/GitHub 凭据；提交、tag、上传和 GitHub Release 仍须使用上述已验证的同一组最终 DMG。
+- 从最终发布源码提交 `e8d2eff` 运行 `release.sh` 成功：两个架构的 Debug/Release App、App ZIP、DMG 均使用隔离路径，分别完成 Developer ID 签名、公证、staple、Gatekeeper、`hdiutil verify`、最终只读挂载和精确 thin 架构复核。唯一最终 arm64 DMG 为 `1,616,914` bytes，SHA256 `5d3fac2e9411951baf21ab0ddf14c107cf579306a3c3fc8d456d615226341584`；x86_64 DMG 为 `1,642,796` bytes，SHA256 `1efc55af5e3cb42409577e63c8432377e17617316c935db309db70901949c62e`；此前重新生成前的摘要已作废，不得用于上传或校验。
+- 从上述最终 arm64 DMG 以可回滚方式覆盖安装 `/Applications/Y-Dock.app`，确认 `1.1.19 (44)`、Team ID `A94225N8T5`、严格 codesign、stapled ticket、Gatekeeper 与 arm64 thin 架构通过并恢复后台运行；上述 x86_64 最终 DMG 中严格 thin 的 App 通过 Rosetta translated 模式短暂启动冒烟后已终止，镜像和临时挂载点已清理。
+- 发布源码提交和 tag `v1.1.19` 已推送；GitHub Draft Release 已严格先上传 arm64、确认其为首个且唯一 DMG 后再上传 x86_64，远端两份资产的名称、顺序、bytes、SHA256 digest 和真实换行 release notes 均与上述最终文件一致。Draft 尚未公开，公开后仍须复核 latest API 首个 `.dmg` 为 arm64。本轮未读取或输出公证/GitHub 凭据。
 - 从已提交源码重新生成最终双架构包时，Apple CloudKit ticket 服务曾在 x86_64 DMG staple 返回 SSL `-1200`，下一轮又遇到签名时间戳服务暂时不可用；两次均在写入 dist 前安全失败。`release.sh` 现对带时间戳的签名和 App/DMG staple 增加最多 4 次有限退避重试，持续失败仍停止发布，不降低签名、公证或验证要求。
 
 ## 2026-07-21
