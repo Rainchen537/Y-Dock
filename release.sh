@@ -82,6 +82,32 @@ trap cleanup EXIT
 
 bold() { print -P "%B$1%b"; }
 
+retry_apple_service_operation() {
+  local label="$1"
+  shift
+  local attempt
+  for attempt in {1..4}; do
+    if "$@"; then
+      return 0
+    fi
+    if (( attempt == 4 )); then
+      echo "✗ $label 连续 4 次失败。" >&2
+      return 1
+    fi
+    echo "  ! $label 暂时失败，$((attempt * 5)) 秒后重试（$attempt/4）…" >&2
+    sleep "$((attempt * 5))"
+  done
+}
+
+codesign_with_timestamp_retry() {
+  retry_apple_service_operation "Apple 签名时间戳服务" codesign "$@"
+}
+
+staple_with_retry() {
+  local target="$1"
+  retry_apple_service_operation "Apple 公证票据装订（${target:t}）" xcrun stapler staple "$target"
+}
+
 release_source_fingerprint() {
   local file
   (
@@ -303,7 +329,7 @@ release_architecture() {
   ditto --noextattr --norsrc "$built_app" "$staged_app"
   xattr -cr "$staged_app"
   assert_app_architecture "$staged_app" "$architecture" "$architecture stage App"
-  codesign --force --deep --options runtime --timestamp --sign "$SIGN_IDENTITY" "$staged_app"
+  codesign_with_timestamp_retry --force --deep --options runtime --timestamp --sign "$SIGN_IDENTITY" "$staged_app"
   codesign --verify --deep --strict --verbose=2 "$staged_app"
   assert_app_architecture "$staged_app" "$architecture" "$architecture 已签名 App"
   signature_info="$(codesign -dvvv "$staged_app" 2>&1)"
@@ -329,7 +355,7 @@ release_architecture() {
   ditto -c -k --keepParent "$staged_app" "$app_zip"
   notarize "$app_zip"
   rm -f "$app_zip"
-  xcrun stapler staple "$staged_app"
+  staple_with_retry "$staged_app"
   validate_staple "$staged_app"
   codesign --verify --deep --strict --verbose=2 "$staged_app"
   spctl -a -t exec -vvv "$staged_app"
@@ -347,7 +373,7 @@ release_architecture() {
   fi
 
   bold "▶ [$architecture] 6/9 独立签名 DMG…"
-  codesign --force --timestamp --sign "$SIGN_IDENTITY" "$dmg_path"
+  codesign_with_timestamp_retry --force --timestamp --sign "$SIGN_IDENTITY" "$dmg_path"
   codesign --verify --verbose=4 "$dmg_path"
   echo "  ✓ $architecture DMG 独立签名校验通过"
 
@@ -356,7 +382,7 @@ release_architecture() {
   echo "  ✓ $architecture DMG 已独立公证"
 
   bold "▶ [$architecture] 8/9 装订并验证 DMG…"
-  xcrun stapler staple "$dmg_path"
+  staple_with_retry "$dmg_path"
   validate_staple "$dmg_path"
   hdiutil verify "$dmg_path"
   spctl -a -vvv -t open --context context:primary-signature "$dmg_path"

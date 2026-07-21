@@ -17,6 +17,7 @@
 - 正式运行最终 `release.sh` 成功：两个架构的 Debug/Release App、App ZIP、DMG 均使用隔离路径，分别完成 Developer ID 签名、公证、staple、Gatekeeper、`hdiutil verify`、最终只读挂载和精确 thin 架构复核。最终 arm64 DMG 为 `1,619,365` bytes，SHA256 `5129dbfde490552a345c9f6eceac1fe8bf4c6d1e6440a62ef553edb48fcabe50`；x86_64 DMG 为 `1,645,294` bytes，SHA256 `6da744c6b743039e7208981c34ea3e24c6a95ab1bd9c0c72cb801f8c2e3461f3`。
 - 从最终 arm64 DMG 以可回滚方式覆盖安装 `/Applications/Y-Dock.app`，确认 `1.1.19 (44)`、Team ID `A94225N8T5`、严格 codesign、stapled ticket、Gatekeeper 与 arm64 thin 架构通过并恢复后台运行；x86_64 最终 DMG 中严格 thin 的 App 通过 Rosetta 短暂启动冒烟后已终止，镜像和临时挂载点已清理。
 - 本轮未读取或输出公证/GitHub 凭据；提交、tag、上传和 GitHub Release 仍须使用上述已验证的同一组最终 DMG。
+- 从已提交源码重新生成最终双架构包时，Apple CloudKit ticket 服务曾在 x86_64 DMG staple 返回 SSL `-1200`，下一轮又遇到签名时间戳服务暂时不可用；两次均在写入 dist 前安全失败。`release.sh` 现对带时间戳的签名和 App/DMG staple 增加最多 4 次有限退避重试，持续失败仍停止发布，不降低签名、公证或验证要求。
 
 ## 2026-07-21
 
