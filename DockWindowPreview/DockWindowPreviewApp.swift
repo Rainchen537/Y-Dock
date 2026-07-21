@@ -449,6 +449,18 @@ final class DockWindowPreviewApp: NSObject, NSApplicationDelegate {
         let alert = NSAlert()
         alert.alertStyle = .informational
         alert.messageText = "\(AppBranding.displayName) 有新版本 \(release.displayVersion)"
+
+        guard release.downloadURL != nil else {
+            alert.informativeText = "\(release.name)\n\n未找到当前架构所需的 \(release.expectedAssetName)。为避免安装错误架构，Y-Dock 不会改用其他 DMG。请打开 Release 页面手动确认。"
+            alert.addButton(withTitle: "打开 Release 页面")
+            alert.addButton(withTitle: "稍后")
+            NSApp.activate(ignoringOtherApps: true)
+            if alert.runModal() == .alertFirstButtonReturn {
+                updateChecker.openReleasePage(release)
+            }
+            return
+        }
+
         alert.informativeText = "\(release.name)\n\n可以直接下载、安装并重启。"
         alert.addButton(withTitle: "下载并安装")
         alert.addButton(withTitle: "打开页面")

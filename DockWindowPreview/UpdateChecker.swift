@@ -10,6 +10,7 @@ final class UpdateChecker {
         let name: String
         let htmlURL: URL
         let downloadURL: URL?
+        let expectedAssetName: String
 
         var displayVersion: String {
             tagName.hasPrefix("v") ? tagName : "v\(version)"
@@ -43,9 +44,10 @@ final class UpdateChecker {
         case invalidResponse
         case invalidStatusCode(Int)
         case missingReleaseURL
-        case missingDownloadURL
+        case missingDownloadURL(String)
         case invalidBundleLocation
         case invalidUpdateApplication
+        case invalidUpdateArchitecture(String)
         case cannotMountUpdate
         case cannotPrepareInstaller
         case cannotStartInstaller
@@ -58,12 +60,14 @@ final class UpdateChecker {
                 return "更新检查失败，HTTP 状态码：\(statusCode)。"
             case .missingReleaseURL:
                 return "最新版本没有可打开的 Release 页面。"
-            case .missingDownloadURL:
-                return "最新版本没有可直接安装的 DMG。"
+            case .missingDownloadURL(let expectedAssetName):
+                return "最新版本缺少当前架构所需的 \(expectedAssetName)。为避免安装错误架构，Y-Dock 不会改用其他 DMG；请打开 Release 页面手动确认。"
             case .invalidBundleLocation:
                 return "自动更新只支持 /Applications/Y-Dock.app。请先安装正式发布版，避免权限记录绑定到开发副本。"
             case .invalidUpdateApplication:
                 return "下载的更新未通过 Y-Dock 的应用身份、代码签名或 Gatekeeper 校验。"
+            case .invalidUpdateArchitecture(let expectedArchitecture):
+                return "下载的更新主可执行文件不是严格匹配当前编译架构的 thin \(expectedArchitecture) binary。为避免删除或替换现有 App，本次更新已安全停止。"
             case .cannotMountUpdate:
                 return "无法挂载下载的 Y-Dock 更新。"
             case .cannotPrepareInstaller:
@@ -78,23 +82,13 @@ final class UpdateChecker {
         let tagName: String
         let name: String?
         let htmlURL: URL?
-        let assets: [GitHubAsset]
+        let assets: [UpdateReleaseAsset]
 
         enum CodingKeys: String, CodingKey {
             case tagName = "tag_name"
             case name
             case htmlURL = "html_url"
             case assets
-        }
-    }
-
-    private struct GitHubAsset: Decodable {
-        let name: String
-        let browserDownloadURL: URL?
-
-        enum CodingKeys: String, CodingKey {
-            case name
-            case browserDownloadURL = "browser_download_url"
         }
     }
 
@@ -145,12 +139,20 @@ final class UpdateChecker {
                     return
                 }
 
+                let expectedAssetName = UpdateAssetSelector.expectedAssetName(
+                    releaseVersion: release.tagName
+                )
+                let matchingAsset = UpdateAssetSelector.matchingAsset(
+                    in: release.assets,
+                    releaseVersion: release.tagName
+                )
                 let latest = ReleaseInfo(
                     version: normalizedVersionString(release.tagName),
                     tagName: release.tagName,
                     name: release.name ?? release.tagName,
                     htmlURL: htmlURL,
-                    downloadURL: release.assets.first(where: { $0.name.lowercased().hasSuffix(".dmg") })?.browserDownloadURL
+                    downloadURL: matchingAsset?.browserDownloadURL,
+                    expectedAssetName: expectedAssetName
                 )
 
                 if compareVersion(latest.version, to: currentVersion) == .orderedDescending {
@@ -178,7 +180,7 @@ final class UpdateChecker {
         completion: @escaping (Result<Void, Error>) -> Void
     ) {
         guard let downloadURL = release.downloadURL else {
-            completion(.failure(UpdateError.missingDownloadURL))
+            completion(.failure(UpdateError.missingDownloadURL(release.expectedAssetName)))
             return
         }
 
@@ -344,6 +346,7 @@ final class UpdateChecker {
                 throw UpdateError.invalidUpdateApplication
             }
 
+            try validateMainExecutableArchitecture(in: sourceURL)
             try runCheckedProcess(
                 executableURL: URL(fileURLWithPath: "/usr/bin/codesign"),
                 arguments: ["--verify", "--deep", "--strict", "--verbose=2", sourceURL.path],
@@ -369,6 +372,68 @@ final class UpdateChecker {
             }
             throw error
         }
+    }
+
+    private func validateMainExecutableArchitecture(in applicationURL: URL) throws {
+        let expectedArchitecture = UpdateReleaseArchitecture.current
+        let executableURL = applicationURL
+            .appendingPathComponent("Contents", isDirectory: true)
+            .appendingPathComponent("MacOS", isDirectory: true)
+            .appendingPathComponent("Y-Dock", isDirectory: false)
+            .standardizedFileURL
+        let expectedExecutableDirectory = applicationURL
+            .appendingPathComponent("Contents", isDirectory: true)
+            .appendingPathComponent("MacOS", isDirectory: true)
+            .standardizedFileURL
+        let resourceValues = try? executableURL.resourceValues(
+            forKeys: [.isRegularFileKey, .isSymbolicLinkKey]
+        )
+        guard
+            executableURL.deletingLastPathComponent() == expectedExecutableDirectory,
+            resourceValues?.isRegularFile == true,
+            resourceValues?.isSymbolicLink != true
+        else {
+            throw UpdateError.invalidUpdateArchitecture(expectedArchitecture.rawValue)
+        }
+
+        let architecturesOutput = try runCheckedProcessCapturingOutput(
+            executableURL: URL(fileURLWithPath: "/usr/bin/lipo"),
+            arguments: ["-archs", executableURL.path],
+            failure: .invalidUpdateArchitecture(expectedArchitecture.rawValue)
+        )
+        guard UpdateExecutableArchitectureValidator.isStrictlyThin(
+            lipoArchitecturesOutput: architecturesOutput,
+            architecture: expectedArchitecture
+        ) else {
+            throw UpdateError.invalidUpdateArchitecture(expectedArchitecture.rawValue)
+        }
+    }
+
+    private func runCheckedProcessCapturingOutput(
+        executableURL: URL,
+        arguments: [String],
+        failure: UpdateError
+    ) throws -> String {
+        let process = Process()
+        let outputPipe = Pipe()
+        process.executableURL = executableURL
+        process.arguments = arguments
+        process.standardOutput = outputPipe
+        process.standardError = FileHandle.nullDevice
+
+        do {
+            try process.run()
+        } catch {
+            throw failure
+        }
+
+        let output = outputPipe.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        guard process.terminationStatus == 0,
+              let outputString = String(data: output, encoding: .utf8) else {
+            throw failure
+        }
+        return outputString
     }
 
     private func runCheckedProcess(
@@ -423,6 +488,7 @@ final class UpdateChecker {
             sourceURL.path,
             mountURL.path,
             destinationURL.path,
+            UpdateReleaseArchitecture.current.rawValue,
             "\(ProcessInfo.processInfo.processIdentifier)"
         ]
 
@@ -442,7 +508,8 @@ final class UpdateChecker {
         SRC="$2"
         MOUNT="$3"
         DEST="$4"
-        APP_PID="$5"
+        EXPECTED_ARCH="$5"
+        APP_PID="$6"
 
         cleanup() {
           /usr/bin/hdiutil detach "$MOUNT" -quiet >/dev/null 2>&1 || \\
@@ -459,6 +526,17 @@ final class UpdateChecker {
 
         if [[ "$SRC" != "$MOUNT/Y-Dock.app" || ! -d "$SRC" || -L "$SRC" ]]; then
           echo "Y-Dock.app not found as a regular app bundle in update DMG" >&2
+          exit 1
+        fi
+
+        EXECUTABLE="$SRC/Contents/MacOS/Y-Dock"
+        if [[ ! -f "$EXECUTABLE" || -L "$EXECUTABLE" ]]; then
+          echo "Y-Dock main executable is missing or is a symbolic link" >&2
+          exit 1
+        fi
+        ACTUAL_ARCHS="$(/usr/bin/lipo -archs "$EXECUTABLE" | /usr/bin/xargs)"
+        if [[ "$ACTUAL_ARCHS" != "$EXPECTED_ARCH" ]]; then
+          echo "Y-Dock update architecture mismatch: expected thin $EXPECTED_ARCH, got $ACTUAL_ARCHS" >&2
           exit 1
         fi
 

@@ -4,6 +4,20 @@
 
 不要在这里记录 token、证书密码、Apple ID、notary 密码等敏感信息。
 
+## 2026-07-22
+
+- 将 `release.sh` 改为单次发布分别构建严格 thin 的 `arm64` 与 `x86_64` Debug/Release App：每种架构使用独立 DerivedData、stage、App ZIP、DMG 工作目录，分别执行签名、公证、staple、Gatekeeper、最终只读挂载复核和精确架构断言；输出固定为 `Y-Dock-v$VERSION-arm64.dmg` 与 `Y-Dock-v$VERSION-x86_64.dmg`，不允许把旧产物复用为新版本输入。
+- 新增纯逻辑 `UpdateAssetSelector`，按编译架构精确匹配完整 GitHub asset 名称；更新检查不再选择第一个 `.dmg`。缺少当前架构资产时禁用直接安装并明确引导 Release 页面，不会回退安装其他架构或无关 DMG。
+- 自动更新在挂载并定位下载 App 后，会先验证 `Contents/MacOS/Y-Dock` 是当前编译架构唯一 slice 的 thin binary，再执行代码签名、Gatekeeper 和身份验证；只读挂载源在安装脚本删除旧 App 前再次做同一架构断言。错架构或 universal binary 会安全失败，现有 `/Applications/Y-Dock.app` 不会被删除。
+- 新增资产与主可执行文件架构纯逻辑测试，覆盖编译架构、资产顺序反转、无关 DMG、目标架构缺失、正确 thin、错误 thin、universal、重复和空架构输出；测试与 App 共用同一实现。
+- `release.sh` 在读取签名/公证配置和任何签名动作前先编译运行 `arm64`、`x86_64` standalone 测试；最终 dist 阶段先成套预检两个 source DMG，再复制到同目录 `.new`、完整复核 DMG 和挂载 App，然后备份并成套切换两个正式文件。复制、验证、备份、改名或最终复核任一步普通失败都会清理本轮文件并恢复原有完整资产组；回滚模拟已通过。新增同版本原子目录锁，拒绝并发发布交错操作同一组正式文件；记录仓库源码指纹并在每个架构构建前后及最终切换前复核，中途源码变化会停止发布，避免双包来自不同源码。异常崩溃遗留锁时会阻止后续流程静默覆盖现场。
+- 首次双资产迁移使用 Draft Release：先上传 `arm64` 并确认它是草稿中的首个 `.dmg`，再上传 `x86_64`；两份资产和 digest 完整验证后才公开，并通过 GitHub latest-release API 确认首个 `.dmg` 仍为 arm64，以兼容仍会选择首个 DMG 的 v1.1.18 updater。Release 只能包含这两个 thin 包，不得上传通用名或 universal DMG。
+- 准备 `v1.1.19`，版本号更新为 `MARKETING_VERSION=1.1.19`、`CURRENT_PROJECT_VERSION=44`，README、AGENTS、AI_CONTEXT 和公开 changelog 已同步双架构资产名称与流程。
+- 最终无签名验证通过：扩展后的 standalone 测试分别编译并运行于 thin `arm64` 与 `x86_64`，全部通过；两种架构的 Release App 也分别使用独立 `/tmp` DerivedData、`ARCHS=<arch>`、`ONLY_ACTIVE_ARCH=YES` 构建成功，Info.plist 均为 `1.1.19 (44)`，主可执行文件分别严格为对应单一架构。两次构建仅出现未依赖 AppIntents 时跳过元数据提取的 Xcode 提示。
+- 正式运行最终 `release.sh` 成功：两个架构的 Debug/Release App、App ZIP、DMG 均使用隔离路径，分别完成 Developer ID 签名、公证、staple、Gatekeeper、`hdiutil verify`、最终只读挂载和精确 thin 架构复核。最终 arm64 DMG 为 `1,619,365` bytes，SHA256 `5129dbfde490552a345c9f6eceac1fe8bf4c6d1e6440a62ef553edb48fcabe50`；x86_64 DMG 为 `1,645,294` bytes，SHA256 `6da744c6b743039e7208981c34ea3e24c6a95ab1bd9c0c72cb801f8c2e3461f3`。
+- 从最终 arm64 DMG 以可回滚方式覆盖安装 `/Applications/Y-Dock.app`，确认 `1.1.19 (44)`、Team ID `A94225N8T5`、严格 codesign、stapled ticket、Gatekeeper 与 arm64 thin 架构通过并恢复后台运行；x86_64 最终 DMG 中严格 thin 的 App 通过 Rosetta 短暂启动冒烟后已终止，镜像和临时挂载点已清理。
+- 本轮未读取或输出公证/GitHub 凭据；提交、tag、上传和 GitHub Release 仍须使用上述已验证的同一组最终 DMG。
+
 ## 2026-07-21
 
 - 修复 Dock hover 偶发延迟不稳或鼠标停住后不再恢复的问题：鼠标节流改为保留最后一次位置的 trailing-edge 解析；Dock Accessibility 短暂 miss 会在有限时间内重试，并为已识别候选保留短暂容错，不再立刻清空候选和重启悬停计时。自动隐藏或放大 Dock 的兜底检测厚度从 96 扩到 128 points，AX 坐标优先使用正确的顶部原点换算点。

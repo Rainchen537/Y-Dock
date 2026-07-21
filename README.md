@@ -13,7 +13,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Rainchen537/Y-Dock/releases/tag/v1.1.18">
+  <a href="https://github.com/Rainchen537/Y-Dock/releases/tag/v1.1.19">
     <img alt="Release" src="https://img.shields.io/github/v/release/Rainchen537/Y-Dock?style=for-the-badge&color=1f8fff">
   </a>
   <img alt="macOS" src="https://img.shields.io/badge/macOS-13%2B-111827?style=for-the-badge&logo=apple">
@@ -23,8 +23,11 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Rainchen537/Y-Dock/releases/download/v1.1.18/Y-Dock-v1.1.18.dmg">
-    <img alt="Download DMG" src="https://img.shields.io/badge/Download-DMG-2563EB?style=for-the-badge&logo=github">
+  <a href="https://github.com/Rainchen537/Y-Dock/releases/download/v1.1.19/Y-Dock-v1.1.19-arm64.dmg">
+    <img alt="Download Apple Silicon DMG" src="https://img.shields.io/badge/Download-Apple%20Silicon-2563EB?style=for-the-badge&logo=apple">
+  </a>
+  <a href="https://github.com/Rainchen537/Y-Dock/releases/download/v1.1.19/Y-Dock-v1.1.19-x86_64.dmg">
+    <img alt="Download Intel DMG" src="https://img.shields.io/badge/Download-Intel-4B5563?style=for-the-badge&logo=apple">
   </a>
 </p>
 
@@ -45,20 +48,21 @@
 | 🎚 卡片窗口控制 | hover 某个窗口卡片，左上角显示退出 App、关闭窗口、最小化窗口三颗控制按钮。 |
 | 🎯 临时聚焦预览 | hover 卡片超过 `50ms` 后，用轻量覆盖层突出当前窗口快照，不改变真实桌面状态。 |
 | 🎛 设置窗口 | 独立设置窗口采用左侧栏和右侧内容区，可调整悬停延迟、缩略图高度、标题显示、开机启动和调试日志。 |
-| ⬇️ 直接更新 | 检测到新版本后可直接下载、验证应用身份与签名、替换并重启，不需要手动拖拽 DMG。 |
+| ⬇️ 直接更新 | 检测到新版本后按当前编译架构精确选择 `arm64` 或 `x86_64` DMG，并在替换前验证应用身份、签名及主可执行文件为当前架构的严格 thin binary；缺少或错配时安全停止，不会删除现有 App。 |
 | 🛡️ 权限状态诊断 | 权限页区分屏幕录制“未开启 / 需要重启 / 已开启”，并提供对应的请求、重启或安装版切换操作。 |
 | 📍 正式安装版切换 | 区分正式安装版与开发副本，并可切换到签名验证通过的 `/Applications/Y-Dock.app`。 |
 | 🔐 公开 API 实现 | 使用 AppKit、Accessibility、CoreGraphics，不依赖 macOS 私有 API。 |
 
 ## 📦 安装
 
-1. 下载最新版 DMG：  
-   [Y-Dock-v1.1.18.dmg](https://github.com/Rainchen537/Y-Dock/releases/download/v1.1.18/Y-Dock-v1.1.18.dmg)
-2. 打开 DMG。
+1. 按 Mac 架构下载最新版 DMG：
+   - Apple Silicon（M 系列）：[Y-Dock-v1.1.19-arm64.dmg](https://github.com/Rainchen537/Y-Dock/releases/download/v1.1.19/Y-Dock-v1.1.19-arm64.dmg)
+   - Intel：[Y-Dock-v1.1.19-x86_64.dmg](https://github.com/Rainchen537/Y-Dock/releases/download/v1.1.19/Y-Dock-v1.1.19-x86_64.dmg)
+2. 打开对应架构的 DMG。
 3. 将 `Y-Dock.app` 拖到 `Applications`。
 4. 启动 `Y-Dock`，按提示开启权限。
 
-> 当前版本已使用 Developer ID 签名并通过 Apple notarization，首次打开不需要绕过 Gatekeeper。
+> 正式发布的两个架构 DMG 都必须独立完成 Developer ID 签名、Apple notarization、ticket 装订和 Gatekeeper 验证，首次打开不需要绕过 Gatekeeper。
 
 ## 🔑 权限说明
 
@@ -137,8 +141,13 @@ open DockWindowPreview.xcodeproj
 xcodebuild -project DockWindowPreview.xcodeproj \
   -scheme DockWindowPreview \
   -configuration Release \
+  -derivedDataPath build/Release-arm64 \
+  ARCHS=arm64 ONLY_ACTIVE_ARCH=YES \
+  CODE_SIGNING_ALLOWED=NO \
   build
 ```
+
+将 `ARCHS` 和 DerivedData 路径改为 `x86_64` 可构建 Intel thin App。正式发布只通过 `./release.sh` 一次生成并分别验证两个架构的 DMG。
 
 ## 🧾 更新日志
 

@@ -53,7 +53,9 @@ Core behavior:
 - `DockWindowPreview/WindowActivator.swift`: AX-based focus, raise, close, minimize, restore.
 - `DockWindowPreview/SettingsWindow.swift`: independent settings window business controller, using `Y-Framework/Setting` for the shared settings shell and controls; it presents runtime-copy diagnostics and the three-state Screen Recording UI.
 - `DockWindowPreview/PermissionsManager.swift`: Accessibility and Screen Recording state, app-scoped TCC refresh, shared Permission descriptor injection, signed installed-copy validation, and restart/switch actions.
-- `DockWindowPreview/UpdateChecker.swift`: GitHub release checks and direct update installation, including signed runtime-identity validation of both the installed destination and mounted source app.
+- `DockWindowPreview/UpdateAssetSelector.swift`: pure, testable release-asset naming/selection and strict thin-main-executable architecture validation. Compile-time `arm64` and `x86_64` builds require the exact matching `Y-Dock-vX.Y.Z-<arch>.dmg` asset and reject wrong or universal Mach-O architecture output.
+- `DockWindowPreview/UpdateChecker.swift`: GitHub release checks and direct update installation, including architecture-exact asset selection, signed runtime-identity validation, and strict thin architecture validation of the mounted App's main executable before any installer is launched. The read-only mounted source is checked again in the installer immediately before replacement, so an architecture mismatch cannot delete the existing App. Missing architecture assets disable direct installation and guide users to the Release page.
+- `Tests/UpdateAssetSelectorTests.swift`: standalone no-credential tests for compile-architecture detection, exact asset selection, reversed order, unrelated DMGs, missing architecture assets, wrong thin binaries, universal binaries, duplicate output, and empty architecture output.
 - `Y-Framework/Setting/YSettingsFramework.swift`: vendored copy of the shared Y-Project settings framework, kept in this repository so GitHub source checkouts build independently; it constrains windows to the active display, validates sidebar identifiers, and verifies installed runtime identity.
 - `Y-Framework/Permission/YPermissionPromptFramework.swift`: vendored first-launch and later-permission prompt coordinator; it is part of the Xcode target Sources.
 - `Y-Framework/DMG/`: vendored APFS DMG framework with a high-contrast 2x Retina background; it stores the background under Finder's special-hidden `.Trashes`, removes `.fseventsd`/index metadata before compression, hides the toolbar/status/path/tab bars, and validates background pixels/DPI plus full icon coordinates after a final read-only remount.
@@ -64,7 +66,7 @@ Core behavior:
 - `CHANGELOG.md`: user-facing release history.
 - `CHANGELOG.me`: AI/maintenance update log.
 - `AI_MAINTENANCE.me`: legacy AI file kept as a pointer to this file.
-- `release.sh`: isolated Debug and Release builds with version/build parity checks, Developer ID identity validation, App ZIP notarization and App ticket stapling, shared DMG framework packaging, DMG notarization/stapling, mounted-App ticket revalidation, and Gatekeeper verification. If `notarytool submit --wait` disconnects after returning a submission ID, the script continues with `notarytool wait` until a final status; failed runs remove large build caches while retaining only the DMG and notary logs for diagnosis.
+- `release.sh`: the only supported release entry point. An atomic same-version lock directory rejects concurrent publishers and is deliberately left behind after an untrapped process crash so a later run cannot silently overwrite `.backup` / `.new` recovery evidence. It records a repository-source fingerprint excluding build outputs and `.claude`, rechecks it before and after each architecture and before finalization, and aborts if the live worktree changes so the two packages cannot silently come from different source snapshots. Before reading signing/notarization configuration or signing any App, it compiles and runs the standalone selector/main-executable architecture tests for both `arm64` and `x86_64`. One invocation then builds separate thin Debug/Release Apps with `ARCHS=<arch>` and `ONLY_ACTIVE_ARCH=YES`, using independent DerivedData, stage, App notarization, DMG packaging, DMG notarization/stapling, Gatekeeper checks, final mounts, and exact architecture assertions. Finalization first preflights both source DMGs, copies both to same-directory architecture-specific `.new` files, completely re-verifies each copied DMG and its mounted App, and only then backs up and replaces the two versioned files as one transaction; any ordinary failure removes current-run files and restores the complete prior pair. It writes only `Y-Dock-vX.Y.Z-arm64.dmg` and `Y-Dock-vX.Y.Z-x86_64.dmg` and never reuses an old artifact as a new release input. If `notarytool submit --wait` disconnects after returning a submission ID, the script continues with `notarytool wait` until a final status; failed runs remove large build caches while retaining only current-run work-directory DMGs and notary logs for diagnosis.
 - `make_dmg.sh`: thin Y-Dock configuration wrapper around `Y-Framework/DMG/YDMGFramework.zsh`.
 
 ## App Identity
@@ -76,6 +78,7 @@ Do not change these unless explicitly requested:
 - Deployment target: macOS 13+
 - App mode: `LSUIElement = true`
 - GitHub repository: `https://github.com/Rainchen537/Y-Dock`
+- Release assets: `Y-Dock-vX.Y.Z-arm64.dmg` and `Y-Dock-vX.Y.Z-x86_64.dmg`; automatic update asset selection is architecture-exact.
 - Xcode project/scheme naming: `DockWindowPreview`
 
 The app icon is currently a raw `.icns` resource referenced by `CFBundleIconFile = AppIcon`. If changing the logo, regenerate `DockWindowPreview/AppIcon.icns` and update the README logo asset/link. Keep the visible icon artwork inset inside the 1024 canvas; a full-bleed rounded square looks oversized in Launchpad.
@@ -88,24 +91,49 @@ The Xcode target must include both `Y-Framework/Setting/YSettingsFramework.swift
 xcodebuild -project DockWindowPreview.xcodeproj \
   -scheme DockWindowPreview \
   -configuration Debug \
-  -derivedDataPath build/VerifyDerivedData \
+  -derivedDataPath build/Debug-arm64 \
+  ARCHS=arm64 ONLY_ACTIVE_ARCH=YES \
   CODE_SIGNING_ALLOWED=NO \
   build
 
 xcodebuild -project DockWindowPreview.xcodeproj \
   -scheme DockWindowPreview \
   -configuration Release \
-  -derivedDataPath build/ReleaseDerivedData \
+  -derivedDataPath build/Release-arm64 \
+  ARCHS=arm64 ONLY_ACTIVE_ARCH=YES \
   CODE_SIGNING_ALLOWED=NO \
   build
+
+xcodebuild -project DockWindowPreview.xcodeproj \
+  -scheme DockWindowPreview \
+  -configuration Release \
+  -derivedDataPath build/Release-x86_64 \
+  ARCHS=x86_64 ONLY_ACTIVE_ARCH=YES \
+  CODE_SIGNING_ALLOWED=NO \
+  build
+
+SDK="$(xcrun --sdk macosx --show-sdk-path)"
+for ARCH in arm64 x86_64; do
+  TEST_BINARY="$(mktemp "/tmp/Y-Dock-update-asset-$ARCH.XXXXXX")"
+  xcrun swiftc -target "$ARCH-apple-macos13.0" -sdk "$SDK" \
+    DockWindowPreview/UpdateAssetSelector.swift \
+    Tests/UpdateAssetSelectorTests.swift \
+    -o "$TEST_BINARY"
+  "$TEST_BINARY"
+  rm -f "$TEST_BINARY"
+done
 ```
 
-Check the built app:
+Check both built Apps independently:
 
 ```sh
-/usr/libexec/PlistBuddy -c "Print :LSUIElement" build/ReleaseDerivedData/Build/Products/Release/Y-Dock.app/Contents/Info.plist
-/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" build/ReleaseDerivedData/Build/Products/Release/Y-Dock.app/Contents/Info.plist
-/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" build/ReleaseDerivedData/Build/Products/Release/Y-Dock.app/Contents/Info.plist
+for ARCH in arm64 x86_64; do
+  APP="build/Release-$ARCH/Build/Products/Release/Y-Dock.app"
+  /usr/libexec/PlistBuddy -c "Print :LSUIElement" "$APP/Contents/Info.plist"
+  /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$APP/Contents/Info.plist"
+  /usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$APP/Contents/Info.plist"
+  test "$(lipo -archs "$APP/Contents/MacOS/Y-Dock" | xargs)" = "$ARCH"
+done
 ```
 
 ## Release Flow
@@ -117,10 +145,10 @@ Check the built app:
 5. Update `AI_CONTEXT.me` if process or project assumptions changed.
 6. Update `CHANGELOG.me` with the maintenance record.
 7. Build Debug and Release.
-8. Package a signed, notarized, and stapled DMG.
+8. Package separate signed, notarized, and stapled `arm64` and `x86_64` DMGs; verify each mounted App is strictly thin for its declared architecture.
 9. Commit, tag, push.
-10. Create a GitHub Release through GitHub MCP / GitHub App and upload the DMG.
-11. Install the app from the final signed, notarized, and stapled DMG into `/Applications`, overwrite the old version, relaunch it, and complete local verification. This step is mandatory.
+10. Create a Draft GitHub Release through GitHub MCP / GitHub App. For the first dual-asset migration release only, upload `arm64` first and verify it is the draft's first `.dmg` asset, then upload `x86_64`; publish the Release only after both assets and their digests are verified. After publication, confirm the GitHub latest-release API still reports the `arm64` filename as its first `.dmg`, keeping the old v1.1.18 updater—which selected the first DMG—on Apple Silicon. Publish exactly the two thin packages and no generic or universal DMG.
+11. Install the app from the final signed, notarized, stapled DMG matching the current Mac architecture into `/Applications`, overwrite the old version, relaunch it, and complete local verification. This step is mandatory.
 
 Packaging can be run through:
 
@@ -128,27 +156,50 @@ Packaging can be run through:
 ./release.sh
 ```
 
-`release.sh` 是唯一受支持的发布入口，不再维护容易遗漏 App 本体公证与 ticket 装订的手工等价命令。不得只公证 DMG：App 必须先以 ZIP 提交公证、完成 staple 和 Gatekeeper 验证，再打包进 DMG；最终还要重挂载镜像复查其中的 App ticket。
+`release.sh` 是唯一受支持的发布入口，不再维护容易遗漏 App 本体公证与 ticket 装订的手工等价命令。不得只公证 DMG：`arm64` 与 `x86_64` App 必须分别先以 ZIP 提交公证、完成 staple、Gatekeeper 和 thin 架构验证，再各自打包进对应 DMG；最终还要分别重挂载镜像复查其中的 App ticket、Gatekeeper 与精确架构。
 
 GitHub release with GitHub MCP / GitHub App is preferred. If unavailable, use `gh`:
 
 ```sh
 VERSION="X.Y.Z" # 发布时替换为已构建并验证的真实版本
-git add README.md CHANGELOG.md AI_CONTEXT.me CHANGELOG.me DockWindowPreview.xcodeproj/project.pbxproj DockWindowPreview/AppIconFactory.swift release.sh
+git add README.md AGENTS.md CHANGELOG.md AI_CONTEXT.me CHANGELOG.me DockWindowPreview.xcodeproj/project.pbxproj DockWindowPreview/UpdateAssetSelector.swift DockWindowPreview/UpdateChecker.swift DockWindowPreview/DockWindowPreviewApp.swift DockWindowPreview/SettingsWindow.swift Tests/UpdateAssetSelectorTests.swift release.sh
 git commit -m "Release Y-Dock v$VERSION"
 git tag "v$VERSION"
 git push origin HEAD:master
 git push origin "v$VERSION"
-gh release create "v$VERSION" "dist/Y-Dock-v$VERSION.dmg" --title "Y-Dock v$VERSION" --notes-file "build/release-notes-v$VERSION.txt"
+# v1.1.19 首次双资产迁移：Draft 中严格先上传 arm64，完整验证后再公开。
+gh release create "v$VERSION" \
+  "dist/Y-Dock-v$VERSION-arm64.dmg" \
+  --draft \
+  --title "Y-Dock v$VERSION" \
+  --notes-file "build/release-notes-v$VERSION.txt"
+FIRST_DMG="$(gh release view "v$VERSION" --json assets \
+  --jq '[.assets[] | select(.name | endswith(".dmg"))][0].name')"
+test "$FIRST_DMG" = "Y-Dock-v$VERSION-arm64.dmg"
+gh release upload "v$VERSION" "dist/Y-Dock-v$VERSION-x86_64.dmg"
+DMG_ASSETS="$(gh release view "v$VERSION" --json assets \
+  --jq '[.assets[] | select(.name | endswith(".dmg")) | .name] | sort | join(" ")')"
+test "$DMG_ASSETS" = "Y-Dock-v$VERSION-arm64.dmg Y-Dock-v$VERSION-x86_64.dmg"
+gh release edit "v$VERSION" --draft=false
+FIRST_DMG="$(gh api repos/Rainchen537/Y-Dock/releases/latest \
+  --jq '[.assets[] | select(.name | endswith(".dmg"))][0].name')"
+test "$FIRST_DMG" = "Y-Dock-v$VERSION-arm64.dmg"
 ```
 
-If `gh` is unavailable, use the GitHub Releases REST API with the existing repo remote (`Rainchen537/Y-Dock`) and upload the same DMG asset. Do not skip updating `CHANGELOG.md`; README links and release notes should match the tag.
+If `gh` is unavailable, use the GitHub Releases REST API with the existing repo remote (`Rainchen537/Y-Dock`) and preserve the same first-migration upload order and latest-API assertion. Upload exactly the two architecture-specific thin DMGs; never add `Y-Dock-vX.Y.Z.dmg` or a universal fallback. Do not skip updating `CHANGELOG.md`; README links and release notes should match the tag.
 
 ## Local Install Check
 
 ```sh
-pkill -x Y-Dock
-ditto "$STAGE/Y-Dock.app" /Applications/Y-Dock.app
+ARCH="$(uname -m)"
+DMG="dist/Y-Dock-v$VERSION-$ARCH.dmg"
+MOUNT="$(mktemp -d /tmp/Y-Dock-install.XXXXXX)"
+hdiutil attach "$DMG" -mountpoint "$MOUNT" -nobrowse -readonly -noautoopen
+pkill -x Y-Dock || true
+rm -rf /Applications/Y-Dock.app
+ditto "$MOUNT/Y-Dock.app" /Applications/Y-Dock.app
+hdiutil detach "$MOUNT"
+rm -rf "$MOUNT"
 codesign --verify --deep --strict --verbose=2 /Applications/Y-Dock.app
 open -a /Applications/Y-Dock.app
 ```

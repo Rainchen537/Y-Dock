@@ -2,6 +2,13 @@
 
 All notable Y-Dock release changes are tracked here.
 
+## v1.1.19 - 2026-07-22
+
+- Updated the release pipeline to produce separate thin Apple Silicon (`arm64`) and Intel (`x86_64`) DMGs, with independent build directories, signing, notarization, stapling, Gatekeeper checks, final DMG mounts, and strict architecture assertions.
+- Changed automatic updates to require the exact architecture-specific asset name instead of selecting the first DMG in a GitHub release.
+- Added a strict thin-binary check for the mounted update App's main executable before replacement, so wrong-architecture or universal downloads stop without deleting the installed App.
+- Missing architecture assets now fail safely and direct users to the GitHub Release page; standalone tests cover ordering, unrelated DMGs, missing matches, and executable architecture validation.
+
 ## v1.1.18 - 2026-07-21
 
 - Added a hover-only close control to each `Option+Tab` window card, rendered as a neutral translucent overlay directly over the app icon.
