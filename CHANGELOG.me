@@ -24,6 +24,7 @@
 - 基于最终源码运行 `release.sh` 完成 App/DMG 双公证与装订：App 公证 ID 为 `3dc354be-9dd8-488f-bcd3-19dabb4d2152`，DMG 公证 ID 为 `13257f2a-d7f0-4209-8729-fdaa3c03178d`；最终 `Y-Dock-v1.1.18.dmg` SHA256 为 `c5de81216cb16912a1ff23dc01b5ea7f203070564601b6675f7a90b00c5d7a67`，Developer ID、hardened runtime、严格签名、App/DMG stapled ticket、Gatekeeper 与 `hdiutil verify` 均通过。
 - 从最终 DMG 覆盖安装 `/Applications/Y-Dock.app`，确认正式安装版为 `1.1.18 (43)`、Bundle ID `com.lixingchen.DockWindowPreview`、`LSUIElement=true`、Developer ID 团队 `A94225N8T5`，且只运行一个正式进程。
 - 使用受控双窗口 Probe 验证最终安装版：`Option+Tab` layer 1000 面板显示两张受控卡片；hover 后左上角出现与 App icon 重合的中性半透明黑色遮罩和白色 X。点击关闭后仅目标窗口消失，面板继续显示并保留剩余项，前台仍是独立的受控 Anchor App，确认关闭操作未误激活目标窗口；Esc 取消后 Option 修饰键已主动释放。
+- 完成 `v1.1.18` 发布闭环：对应源码提交 `d593ab7a993a7b028ca39bbe30b3f9f4bc742f2d`、tag `v1.1.18`、Release `https://github.com/Rainchen537/Y-Dock/releases/tag/v1.1.18`。GitHub Release 标题和真实换行说明正确，资产 `Y-Dock-v1.1.18.dmg` 的远端 digest 为 `sha256:c5de81216cb16912a1ff23dc01b5ea7f203070564601b6675f7a90b00c5d7a67`，与本地最终 DMG 完全一致；tag 保持指向功能源码提交，发布记录使用后续文档提交，不移动 tag。
 
 ## 2026-07-20
 
