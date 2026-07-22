@@ -53,9 +53,9 @@ Core behavior:
 - `DockWindowPreview/WindowActivator.swift`: AX-based focus, raise, close, minimize, restore.
 - `DockWindowPreview/SettingsWindow.swift`: independent settings window business controller, using `Y-Framework/Setting` for the shared settings shell and controls; it presents runtime-copy diagnostics and the three-state Screen Recording UI.
 - `DockWindowPreview/PermissionsManager.swift`: Accessibility and Screen Recording state, app-scoped TCC refresh, shared Permission descriptor injection, signed installed-copy validation, and restart/switch actions.
-- `DockWindowPreview/UpdateAssetSelector.swift`: pure, testable release-asset naming/selection and strict thin-main-executable architecture validation. Compile-time `arm64` and `x86_64` builds require the exact matching `Y-Dock-vX.Y.Z-<arch>.dmg` asset and reject wrong or universal Mach-O architecture output.
-- `DockWindowPreview/UpdateChecker.swift`: GitHub release checks and direct update installation, including architecture-exact asset selection, signed runtime-identity validation, and strict thin architecture validation of the mounted App's main executable before any installer is launched. The read-only mounted source is checked again in the installer immediately before replacement, so an architecture mismatch cannot delete the existing App. Missing architecture assets disable direct installation and guide users to the Release page.
-- `Tests/UpdateAssetSelectorTests.swift`: standalone no-credential tests for compile-architecture detection, exact asset selection, reversed order, unrelated DMGs, missing architecture assets, wrong thin binaries, universal binaries, duplicate output, and empty architecture output.
+- `DockWindowPreview/UpdateAssetSelector.swift`: pure, testable release-asset naming/selection, strict numeric version comparison, exact downloaded-App version matching, and strict thin-main-executable architecture validation. Compile-time `arm64` and `x86_64` builds require the exact matching `Y-Dock-vX.Y.Z-<arch>.dmg` asset and reject wrong or universal Mach-O architecture output.
+- `DockWindowPreview/UpdateChecker.swift`: GitHub release checks and direct update installation. The expected Release version is carried from selection through download and installation, must be strictly newer than the running version, and must exactly match the downloaded App. The mounted source, same-volume candidate copy, existing destination, final destination, and transaction helper copy are checked for non-symlink identity, Bundle ID, Developer ID team and authority, hardened runtime, code signature, Gatekeeper, exact version, and strict thin architecture. Installation uses `RENAME_SWAP` / `RENAME_EXCL` + `RENAME_NOFOLLOW_ANY` candidate/backup transactions and a fixed destination-directory `.Y-Dock-update.lock`. Direct mode starts with `/bin/zsh -f`，installer 写出 `READY\n` 后关闭 stdout；Swift 通过有 deadline 的 `poll(2)` 读到 EOF，只有完整帧严格等于 `READY\n` 才继续，尾随内容、开放 pipe、短帧和超时都会终止 installer。取消信号会在 cleanup 前清除 parent-exit authorization，使当前 App 与 owned lock 保持正确。管理员 fallback 以 privileged 模式调用同一 installer：可信 SHA-256 来自签名 App 内编译的脚本文本，root 在自有目录复制并重算脚本摘要，所有 rename 都通过由已验证 candidate 复制出的完整 root-owned helper App 执行，并在每次操作前重新验证，不再读取可替换的 DMG mount helper。缺失或无效资产会停止且不删除现有 App。
+- `Tests/UpdateAssetSelectorTests.swift`: standalone no-credential tests for compile-architecture detection, exact asset selection, reversed order, unrelated DMGs, missing architecture assets, exact App-version matching, same-version/downgrade/malformed-version rejection, wrong thin binaries, universal binaries, duplicate output, and empty architecture output.
 - `Y-Framework/Setting/YSettingsFramework.swift`: vendored copy of the shared Y-Project settings framework, kept in this repository so GitHub source checkouts build independently; it constrains windows to the active display, validates sidebar identifiers, and verifies installed runtime identity.
 - `Y-Framework/Permission/YPermissionPromptFramework.swift`: vendored first-launch and later-permission prompt coordinator; it is part of the Xcode target Sources.
 - `Y-Framework/DMG/`: vendored APFS DMG framework with a high-contrast 2x Retina background; it stores the background under Finder's special-hidden `.Trashes`, removes `.fseventsd`/index metadata before compression, hides the toolbar/status/path/tab bars, and validates background pixels/DPI plus full icon coordinates after a final read-only remount.
@@ -66,7 +66,7 @@ Core behavior:
 - `CHANGELOG.md`: user-facing release history.
 - `CHANGELOG.me`: AI/maintenance update log.
 - `AI_MAINTENANCE.me`: legacy AI file kept as a pointer to this file.
-- `release.sh`: the only supported release entry point. An atomic same-version lock directory rejects concurrent publishers and is deliberately left behind after an untrapped process crash so a later run cannot silently overwrite `.backup` / `.new` recovery evidence. It records a repository-source fingerprint excluding build outputs and `.claude`, rechecks it before and after each architecture and before finalization, and aborts if the live worktree changes so the two packages cannot silently come from different source snapshots. Before reading signing/notarization configuration or signing any App, it compiles and runs the standalone selector/main-executable architecture tests for both `arm64` and `x86_64`. One invocation then builds separate thin Debug/Release Apps with `ARCHS=<arch>` and `ONLY_ACTIVE_ARCH=YES`, using independent DerivedData, stage, App notarization, DMG packaging, DMG notarization/stapling, Gatekeeper checks, final mounts, and exact architecture assertions. Finalization first preflights both source DMGs, copies both to same-directory architecture-specific `.new` files, completely re-verifies each copied DMG and its mounted App, and only then backs up and replaces the two versioned files as one transaction; any ordinary failure removes current-run files and restores the complete prior pair. It writes only `Y-Dock-vX.Y.Z-arm64.dmg` and `Y-Dock-vX.Y.Z-x86_64.dmg` and never reuses an old artifact as a new release input. If `notarytool submit --wait` disconnects after returning a submission ID, the script continues with `notarytool wait` until a final status; failed runs remove large build caches while retaining only current-run work-directory DMGs and notary logs for diagnosis.
+- `release.sh`: the only supported release entry point. An atomic same-version lock directory rejects concurrent publishers and is deliberately left behind after an untrapped process crash so a later run cannot silently overwrite `.backup` / `.new` recovery evidence. Before the fingerprint baseline it requires the repository-local `Y-Framework` ancestor and DMG subtree to be real non-symlink vendored directories; the release DMG call sets `Y_RELEASE_REQUIRE_VENDORED=1`, fixes the background generator to the vendored Swift file, clears inherited layout overrides, and cannot fall back to parent-directory code outside the Git tag. The source fingerprint confirms the project directory is the independent Git root, explicitly checks both tracked and untracked NUL-delimited enumeration commands, hashes regular files from stdin so newline/backslash filenames remain valid, writes raw symlink-target bytes including trailing newlines, represents a tracked working-tree deletion with a stable marker, and fails closed on manifest writes, Git/readlink/shasum, or unsupported-object errors. The fingerprint is checked before and after each architecture, immediately after the fully verified `.new` pair and before formal-path replacement, and once more after final artifact verification before success. Before reading signing/notarization configuration or signing any App, the script compiles and runs standalone selector/main-executable architecture tests for both `arm64` and `x86_64`. One invocation then builds separate thin Debug/Release Apps with independent DerivedData, stage, App notarization, DMG packaging, DMG notarization/stapling, Gatekeeper checks, final mounts, and exact architecture assertions. Finalization preflights both source DMGs, copies both to same-directory architecture-specific `.new` files, completely re-verifies each copied DMG and mounted App, and only then backs up and replaces the two versioned files as one transaction; any ordinary failure removes current-run files and restores the complete prior pair. It writes only `Y-Dock-vX.Y.Z-arm64.dmg` and `Y-Dock-vX.Y.Z-x86_64.dmg` and never reuses an old artifact as a new release input.
 - `release.sh` 对带时间戳的 Developer ID 签名和 App/DMG ticket 装订执行有限次数退避重试，避免 Apple 时间戳或 CloudKit ticket 服务的短暂网络故障迫使整轮双架构发布从头开始；连续失败仍会安全停止并保留既有 dist 资产。
 - `make_dmg.sh`: thin Y-Dock configuration wrapper around `Y-Framework/DMG/YDMGFramework.zsh`.
 
@@ -148,7 +148,7 @@ done
 7. Build Debug and Release.
 8. Package separate signed, notarized, and stapled `arm64` and `x86_64` DMGs; verify each mounted App is strictly thin for its declared architecture.
 9. Commit, tag, push.
-10. Create a Draft GitHub Release through GitHub MCP / GitHub App. For the first dual-asset migration release only, upload `arm64` first and verify it is the draft's first `.dmg` asset, then upload `x86_64`; publish the Release only after both assets and their digests are verified. After publication, confirm the GitHub latest-release API still reports the `arm64` filename as its first `.dmg`, keeping the old v1.1.18 updater—which selected the first DMG—on Apple Silicon. Publish exactly the two thin packages and no generic or universal DMG.
+10. Create a Draft GitHub Release through GitHub MCP / GitHub App. Upload `arm64` first and verify the API's original asset order before uploading `x86_64`; before publication require exactly those two DMGs in raw order `arm64` then `x86_64`, and require each remote byte size and SHA-256 digest to match the final local file. Release notes must use real newlines and match the reviewed notes exactly. After publication, confirm the GitHub latest-release API still reports the `arm64` filename as its first `.dmg`. Publish exactly the two thin packages and no generic or universal DMG.
 11. Install the app from the final signed, notarized, stapled DMG matching the current Mac architecture into `/Applications`, overwrite the old version, relaunch it, and complete local verification. This step is mandatory.
 
 Packaging can be run through:
@@ -168,19 +168,31 @@ git commit -m "Release Y-Dock v$VERSION"
 git tag "v$VERSION"
 git push origin HEAD:master
 git push origin "v$VERSION"
-# v1.1.19 首次双资产迁移：Draft 中严格先上传 arm64，完整验证后再公开。
-gh release create "v$VERSION" \
-  "dist/Y-Dock-v$VERSION-arm64.dmg" \
-  --draft \
-  --title "Y-Dock v$VERSION" \
-  --notes-file "build/release-notes-v$VERSION.txt"
-FIRST_DMG="$(gh release view "v$VERSION" --json assets \
-  --jq '[.assets[] | select(.name | endswith(".dmg"))][0].name')"
-test "$FIRST_DMG" = "Y-Dock-v$VERSION-arm64.dmg"
-gh release upload "v$VERSION" "dist/Y-Dock-v$VERSION-x86_64.dmg"
-DMG_ASSETS="$(gh release view "v$VERSION" --json assets \
-  --jq '[.assets[] | select(.name | endswith(".dmg")) | .name] | sort | join(" ")')"
-test "$DMG_ASSETS" = "Y-Dock-v$VERSION-arm64.dmg Y-Dock-v$VERSION-x86_64.dmg"
+ARM_DMG="dist/Y-Dock-v$VERSION-arm64.dmg"
+INTEL_DMG="dist/Y-Dock-v$VERSION-x86_64.dmg"
+NOTES="build/release-notes-v$VERSION.txt"
+gh release create "v$VERSION" "$ARM_DMG" --draft \
+  --title "Y-Dock v$VERSION" --notes-file "$NOTES"
+RAW_DMG_ASSETS="$(gh release view "v$VERSION" --json assets \
+  --jq '[.assets[] | select(.name | endswith(".dmg")) | .name] | join(" ")')"
+test "$RAW_DMG_ASSETS" = "Y-Dock-v$VERSION-arm64.dmg"
+gh release upload "v$VERSION" "$INTEL_DMG"
+RAW_DMG_ASSETS="$(gh release view "v$VERSION" --json assets \
+  --jq '[.assets[] | select(.name | endswith(".dmg")) | .name] | join(" ")')"
+test "$RAW_DMG_ASSETS" = "Y-Dock-v$VERSION-arm64.dmg Y-Dock-v$VERSION-x86_64.dmg"
+for ARCH in arm64 x86_64; do
+  LOCAL="dist/Y-Dock-v$VERSION-$ARCH.dmg"
+  LOCAL_SIZE="$(stat -f%z "$LOCAL")"
+  LOCAL_DIGEST="sha256:$(shasum -a 256 "$LOCAL" | cut -d' ' -f1)"
+  REMOTE_SIZE="$(gh release view "v$VERSION" --json assets \
+    --jq ".assets[] | select(.name == \"Y-Dock-v$VERSION-$ARCH.dmg\") | .size")"
+  REMOTE_DIGEST="$(gh release view "v$VERSION" --json assets \
+    --jq ".assets[] | select(.name == \"Y-Dock-v$VERSION-$ARCH.dmg\") | .digest")"
+  test "$REMOTE_SIZE" = "$LOCAL_SIZE"
+  test "$REMOTE_DIGEST" = "$LOCAL_DIGEST"
+done
+gh release view "v$VERSION" --json body --jq .body > "build/remote-notes-v$VERSION.txt"
+cmp -s "$NOTES" "build/remote-notes-v$VERSION.txt"
 gh release edit "v$VERSION" --draft=false
 FIRST_DMG="$(gh api repos/Rainchen537/Y-Dock/releases/latest \
   --jq '[.assets[] | select(.name | endswith(".dmg"))][0].name')"

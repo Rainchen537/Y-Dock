@@ -10,6 +10,8 @@ private enum UpdateAssetSelectorTests {
         testReversedAssetOrder()
         testUnrelatedDMGsAreIgnored()
         testMissingArchitectureFailsSafely()
+        testExpectedApplicationVersionMustMatchExactly()
+        testUpdateVersionMustBeStrictlyNewer()
 
         guard failureCount == 0 else {
             fputs("\(failureCount) update asset selector test(s) failed.\n", stderr)
@@ -133,6 +135,53 @@ private enum UpdateAssetSelectorTests {
                 architecture: .arm64
             ) == nil,
             "missing arm64 asset must not fall back to another DMG"
+        )
+    }
+
+    private static func testExpectedApplicationVersionMustMatchExactly() {
+        expect(
+            UpdateVersionValidator.isExpectedApplicationVersion(
+                actualVersion: "1.1.20",
+                expectedVersion: "1.1.20"
+            ),
+            "the downloaded app version must exactly match the release version"
+        )
+        expect(
+            !UpdateVersionValidator.isExpectedApplicationVersion(
+                actualVersion: "1.1.19",
+                expectedVersion: "1.1.20"
+            ),
+            "an older app renamed as the new release must fail"
+        )
+        expect(
+            !UpdateVersionValidator.isExpectedApplicationVersion(
+                actualVersion: "1.1.20",
+                expectedVersion: ""
+            ),
+            "an empty expected version must fail"
+        )
+    }
+
+    private static func testUpdateVersionMustBeStrictlyNewer() {
+        expect(
+            UpdateVersionValidator.isVersion("v1.1.20", newerThan: "1.1.19"),
+            "a newer patch version must pass"
+        )
+        expect(
+            !UpdateVersionValidator.isVersion("1.1.19", newerThan: "1.1.19"),
+            "the installed version must not be reinstalled"
+        )
+        expect(
+            !UpdateVersionValidator.isVersion("1.1.18", newerThan: "1.1.19"),
+            "a downgrade must fail"
+        )
+        expect(
+            !UpdateVersionValidator.isVersion("1.x.20", newerThan: "1.1.19"),
+            "a malformed release version must fail"
+        )
+        expect(
+            !UpdateVersionValidator.isVersion("1..20", newerThan: "1.1.19"),
+            "an empty version component must fail"
         )
     }
 

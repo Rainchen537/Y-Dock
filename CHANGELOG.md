@@ -2,6 +2,15 @@
 
 All notable Y-Dock release changes are tracked here.
 
+## v1.1.20 - 2026-07-22
+
+- Bound the expected GitHub Release version to every direct-update stage and reject same-version, downgrade, malformed, or renamed older App bundles.
+- Replaced delete-then-copy installation with a same-volume candidate and backup transaction; the mounted source, candidate, and final destination must all pass version, identity, Developer ID, hardened runtime, code-signing, Gatekeeper, and strict thin-architecture checks.
+- Added rollback when candidate placement or final validation fails, and made the administrator fallback invoke the same transactional installer instead of a separate destructive command.
+- Added a fixed update lock and a bounded `/bin/zsh -f` readiness channel that requires `READY\n` followed by EOF, so concurrent updates, startup-output pollution, trailing bytes, cancellation, or a stalled direct installer fail closed without leaving the current App stopped.
+- The privileged path now verifies a SHA-256 baseline derived from the installer compiled into the signed App, executes only a root-owned copy, and performs every atomic rename through a separately copied and revalidated complete helper App bundle instead of the replaceable DMG mount.
+- Hardened the dual-architecture release source fingerprint so Git enumeration, raw symlink-target bytes (including trailing newlines), unusual filenames, manifest writes, and hashes fail closed, tracked working-tree deletions use a stable marker, the repository-local vendored DMG framework is mandatory, and source changes are checked immediately before artifact replacement and again before success.
+
 ## v1.1.19 - 2026-07-22
 
 - Updated the release pipeline to produce separate thin Apple Silicon (`arm64`) and Intel (`x86_64`) DMGs, with independent build directories, signing, notarization, stapling, Gatekeeper checks, final DMG mounts, and strict architecture assertions.
