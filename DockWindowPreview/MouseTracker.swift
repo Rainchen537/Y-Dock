@@ -7,12 +7,14 @@ final class MouseTracker {
     var onMouseLeftDockAndPreview: (() -> Void)?
     var onDockContextMenuTrackingBegan: ((NSPoint) -> Void)?
     var onDockContextMenuInteractionEnded: (() -> Void)?
+    var onDockPrimaryClick: ((DockItem, Bool, NSPoint) -> Void)?
     var isPointInsidePreviewPanel: ((NSPoint) -> Bool)?
 
     private let dockInspector: DockInspector
     private let settings: AppSettings
     private var globalMonitor: Any?
     private var localMonitor: Any?
+    private var workspaceActivationObserver: NSObjectProtocol?
     private var hoverWorkItem: DispatchWorkItem?
     private var leaveWorkItem: DispatchWorkItem?
     private var trailingMoveWorkItem: DispatchWorkItem?
@@ -21,9 +23,17 @@ final class MouseTracker {
     private var currentHoverItem: DockItem?
     private var currentHoverPoint: NSPoint?
     private var lastObservedPoint: NSPoint?
+    private var frontmostApplicationPIDAtLastPointerMove: pid_t?
+    private var lastPointerMoveAt: TimeInterval = 0
+    private var currentFrontmostApplicationPID: pid_t?
+    private var previousFrontmostApplicationPID: pid_t?
+    private var frontmostApplicationChangedAt: TimeInterval = 0
     private var lastSuccessfulHitAt: TimeInterval = 0
     private var unresolvedHoverStartedAt: TimeInterval?
     private var hitTestRetryDeadline: TimeInterval?
+    private var lastDockPrimaryClickEventNumber: Int?
+    private var lastDockPrimaryClickTimestamp: TimeInterval = -1
+    private var lastDockPrimaryClickPoint = NSPoint(x: -.greatestFiniteMagnitude, y: -.greatestFiniteMagnitude)
     private var lastHandledAt: TimeInterval = 0
     private let throttleInterval: TimeInterval = 0.035
     private let leaveDelay: TimeInterval = 0.120
@@ -58,6 +68,21 @@ final class MouseTracker {
             return event
         }
 
+        currentFrontmostApplicationPID = NSWorkspace.shared.frontmostApplication?.processIdentifier
+        workspaceActivationObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            guard
+                let self,
+                let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+            else {
+                return
+            }
+            self.recordFrontmostApplicationChange(to: app.processIdentifier)
+        }
+
         DWLog("MouseTracker started")
     }
 
@@ -68,13 +93,22 @@ final class MouseTracker {
         if let localMonitor {
             NSEvent.removeMonitor(localMonitor)
         }
+        if let workspaceActivationObserver {
+            NSWorkspace.shared.notificationCenter.removeObserver(workspaceActivationObserver)
+        }
         globalMonitor = nil
         localMonitor = nil
+        workspaceActivationObserver = nil
         cancelPendingHover()
         cancelPendingLeave()
         cancelTrailingMove()
         cancelHitTestRetry()
         clearHoverCandidate(cancelRetry: false)
+        frontmostApplicationPIDAtLastPointerMove = nil
+        lastPointerMoveAt = 0
+        currentFrontmostApplicationPID = nil
+        previousFrontmostApplicationPID = nil
+        frontmostApplicationChangedAt = 0
     }
 
     private func handleMouseEvent(_ event: NSEvent) {
@@ -83,7 +117,10 @@ final class MouseTracker {
             if !handleSecondaryMouseDown(at: NSEvent.mouseLocation) {
                 onDockContextMenuInteractionEnded?()
             }
-        case .leftMouseDown, .otherMouseDown, .keyDown:
+        case .leftMouseDown:
+            onDockContextMenuInteractionEnded?()
+            handlePrimaryMouseDown(event)
+        case .otherMouseDown, .keyDown:
             onDockContextMenuInteractionEnded?()
         default:
             handleMouseMove(at: NSEvent.mouseLocation)
@@ -92,6 +129,82 @@ final class MouseTracker {
 
     func refreshCurrentHover() {
         handleMouseMove(at: NSEvent.mouseLocation, forceHoverResolution: true)
+    }
+
+    private func recordFrontmostApplicationChange(to processIdentifier: pid_t) {
+        guard processIdentifier != currentFrontmostApplicationPID else { return }
+        previousFrontmostApplicationPID = currentFrontmostApplicationPID
+        currentFrontmostApplicationPID = processIdentifier
+        frontmostApplicationChangedAt = Date.timeIntervalSinceReferenceDate
+    }
+
+    private func handlePrimaryMouseDown(_ event: NSEvent) {
+        let point = NSEvent.mouseLocation
+        let modifierFlags = event.modifierFlags
+        let eventNumber = event.eventNumber
+        let timestamp = event.timestamp
+
+        if !Thread.isMainThread {
+            DispatchQueue.main.async { [weak self] in
+                self?.handlePrimaryMouseDown(
+                    at: point,
+                    modifierFlags: modifierFlags,
+                    eventNumber: eventNumber,
+                    timestamp: timestamp
+                )
+            }
+            return
+        }
+
+        handlePrimaryMouseDown(
+            at: point,
+            modifierFlags: modifierFlags,
+            eventNumber: eventNumber,
+            timestamp: timestamp
+        )
+    }
+
+    private func handlePrimaryMouseDown(
+        at point: NSPoint,
+        modifierFlags: NSEvent.ModifierFlags,
+        eventNumber: Int,
+        timestamp: TimeInterval
+    ) {
+        let disallowedModifiers: NSEvent.ModifierFlags = [.control, .command, .option, .shift]
+        guard modifierFlags.intersection(disallowedModifiers).isEmpty else { return }
+
+        if eventNumber != 0, eventNumber == lastDockPrimaryClickEventNumber {
+            return
+        }
+        if abs(timestamp - lastDockPrimaryClickTimestamp) < 0.01,
+           hypot(point.x - lastDockPrimaryClickPoint.x, point.y - lastDockPrimaryClickPoint.y) < 0.5 {
+            return
+        }
+
+        lastDockPrimaryClickEventNumber = eventNumber
+        lastDockPrimaryClickTimestamp = timestamp
+        lastDockPrimaryClickPoint = point
+
+        guard
+            let region = dockInspector.dockRegion(containing: point),
+            region.frame.insetBy(dx: -6, dy: -6).contains(point),
+            let item = dockInspector.applicationDockItem(at: point, in: region),
+            let app = item.runningApplication
+        else {
+            return
+        }
+
+        let targetPID = app.processIdentifier
+        let wasFrontmost = DockClickMinimizePolicy.targetWasFrontmostBeforeClick(
+            targetPID: targetPID,
+            observedFrontmostPID: NSWorkspace.shared.frontmostApplication?.processIdentifier,
+            trackedFrontmostPID: currentFrontmostApplicationPID,
+            previousTrackedFrontmostPID: previousFrontmostApplicationPID,
+            frontmostPIDAtLastPointerMove: frontmostApplicationPIDAtLastPointerMove,
+            frontmostChangedAt: frontmostApplicationChangedAt,
+            lastPointerMoveAt: lastPointerMoveAt
+        )
+        onDockPrimaryClick?(item, wasFrontmost, point)
     }
 
     @discardableResult
@@ -131,6 +244,12 @@ final class MouseTracker {
         }
 
         lastObservedPoint = point
+        let observedFrontmostPID = NSWorkspace.shared.frontmostApplication?.processIdentifier
+        if let observedFrontmostPID, observedFrontmostPID != currentFrontmostApplicationPID {
+            recordFrontmostApplicationChange(to: observedFrontmostPID)
+        }
+        frontmostApplicationPIDAtLastPointerMove = currentFrontmostApplicationPID ?? observedFrontmostPID
+        lastPointerMoveAt = Date.timeIntervalSinceReferenceDate
         let region = dockInspector.dockRegion(containing: point)
         let isInsideDockFrame = region?.frame.contains(point) == true
         let isInsidePreviewProtection = isPointInsidePreviewPanel?(point) == true

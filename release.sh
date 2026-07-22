@@ -334,27 +334,42 @@ validate_staple() {
   fi
 }
 
-run_update_selector_tests() {
-  local sdk test_dir architecture test_binary actual_architecture
+run_standalone_tests() {
+  local sdk test_dir architecture selector_test_binary policy_test_binary actual_architecture
   sdk="$(xcrun --sdk macosx --show-sdk-path)"
   test_dir="$WORK_ROOT/tests"
   mkdir -p "$test_dir"
 
   for architecture in "${ARCHITECTURES[@]}"; do
-    test_binary="$test_dir/UpdateAssetSelectorTests-$architecture"
+    selector_test_binary="$test_dir/UpdateAssetSelectorTests-$architecture"
     xcrun swiftc \
       -target "$architecture-apple-macos13.0" \
       -sdk "$sdk" \
       "$ROOT_DIR/DockWindowPreview/UpdateAssetSelector.swift" \
       "$ROOT_DIR/Tests/UpdateAssetSelectorTests.swift" \
-      -o "$test_binary"
-    actual_architecture="$(/usr/bin/lipo -archs "$test_binary" | /usr/bin/xargs)"
+      -o "$selector_test_binary"
+    actual_architecture="$(/usr/bin/lipo -archs "$selector_test_binary" | /usr/bin/xargs)"
     if [[ "$actual_architecture" != "$architecture" ]]; then
       echo "✗ selector 测试应编译为 $architecture，实际为：$actual_architecture" >&2
       return 1
     fi
-    "$test_binary"
-    rm -f "$test_binary"
+    "$selector_test_binary"
+    rm -f "$selector_test_binary"
+
+    policy_test_binary="$test_dir/AppSettingsPolicyTests-$architecture"
+    xcrun swiftc \
+      -target "$architecture-apple-macos13.0" \
+      -sdk "$sdk" \
+      "$ROOT_DIR/DockWindowPreview/AppSettings.swift" \
+      "$ROOT_DIR/Tests/AppSettingsPolicyTests.swift" \
+      -o "$policy_test_binary"
+    actual_architecture="$(/usr/bin/lipo -archs "$policy_test_binary" | /usr/bin/xargs)"
+    if [[ "$actual_architecture" != "$architecture" ]]; then
+      echo "✗ settings policy 测试应编译为 $architecture，实际为：$actual_architecture" >&2
+      return 1
+    fi
+    "$policy_test_binary"
+    rm -f "$policy_test_binary"
   done
   rmdir "$test_dir"
 }
@@ -520,10 +535,10 @@ SOURCE_FINGERPRINT="$(release_source_fingerprint)" || {
 }
 echo "  ✓ 已锁定本轮发布源码指纹"
 
-bold "▶ 运行双架构 updater selector 测试…"
-run_update_selector_tests
-assert_release_source_unchanged "双架构 updater 测试后"
-echo "  ✓ updater selector 与主可执行文件架构测试通过"
+bold "▶ 运行双架构 standalone 测试…"
+run_standalone_tests
+assert_release_source_unchanged "双架构 standalone 测试后"
+echo "  ✓ updater selector、主可执行文件架构与 settings policy 测试通过"
 
 if [[ -z "$SIGN_IDENTITY" ]]; then
   SIGN_IDENTITY="$(security find-identity -v -p codesigning 2>/dev/null \

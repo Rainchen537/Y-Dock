@@ -13,10 +13,11 @@ private enum PreviewPanelLayout {
     static let titleFontSize: CGFloat = 14
     static let titleIconSize: CGFloat = 22
     static let controlButtonSize: CGFloat = 16.5
-    static let controlSpacing: CGFloat = 6.5
+    static let controlButtonSlotSize = AppSettings.maximumPreviewControlSize
+    static let controlSpacing: CGFloat = 0
     static let controlLeading: CGFloat = 8
-    static var controlTop: CGFloat { cardInset + (titleRowHeight - controlButtonSize) / 2 }
-    static let controlMaskWidth: CGFloat = 90
+    static var controlTop: CGFloat { cardInset + (titleRowHeight - controlButtonSlotSize) / 2 }
+    static let controlMaskWidth: CGFloat = 104
     static var controlMaskHeight: CGFloat { cardInset + titleRowHeight }
     static let dockBridgeInset: CGFloat = 28
     static let dockBridgeAnchorSpan: CGFloat = 150
@@ -70,6 +71,7 @@ final class PreviewPanel: NSPanel {
     var onCloseWindow: ((WindowInfo) -> Void)?
     var onMinimizeWindow: ((WindowInfo) -> Void)?
     var onQuitApplication: ((WindowInfo) -> Void)?
+    var onRequestQuitApplication: ((WindowInfo) -> Void)?
 
     private let thumbnailProvider: WindowThumbnailProvider
     private let settings: AppSettings
@@ -248,13 +250,13 @@ final class PreviewPanel: NSPanel {
             view.removeFromSuperview()
         }
 
-        let rows = makeRows(for: items, appIcon: app.icon)
+        let rows = makeRows(for: items, app: app)
         for row in rows {
             stackView.addArrangedSubview(row)
         }
     }
 
-    private func makeRows(for items: [PreviewItem], appIcon: NSImage?) -> [WindowPreviewRowView] {
+    private func makeRows(for items: [PreviewItem], app: NSRunningApplication) -> [WindowPreviewRowView] {
         let groups = rowGroups(for: items)
         var rows: [WindowPreviewRowView] = []
 
@@ -274,9 +276,10 @@ final class PreviewPanel: NSPanel {
             for (index, item) in group.enumerated() {
                 let card = WindowPreviewCardView(
                     window: item.window,
-                    appIcon: appIcon,
+                    appIcon: app.icon,
                     thumbnail: item.thumbnail,
                     thumbnailSize: item.thumbnailSize,
+                    runningApplication: app,
                     settings: settings
                 )
                 card.joinedPosition = PreviewJoinedCardPosition(index: index, count: group.count)
@@ -291,6 +294,9 @@ final class PreviewPanel: NSPanel {
                 }
                 card.onQuitApplication = { [weak self] selectedWindow in
                     self?.onQuitApplication?(selectedWindow)
+                }
+                card.onRequestQuitApplication = { [weak self] selectedWindow in
+                    self?.onRequestQuitApplication?(selectedWindow)
                 }
                 cardViewsByWindowID[item.window.windowID] = card
                 row.addArrangedSubview(card)
@@ -619,10 +625,15 @@ private enum PreviewJoinedCardPosition {
 }
 
 private final class WindowPreviewCardView: NSView {
+    private enum TrackingAreaKind {
+        static let controlRegion = "controlRegion"
+    }
+
     var onClick: ((WindowInfo) -> Void)?
     var onClose: ((WindowInfo) -> Void)?
     var onMinimize: ((WindowInfo) -> Void)?
     var onQuitApplication: ((WindowInfo) -> Void)?
+    var onRequestQuitApplication: ((WindowInfo) -> Void)?
 
     var joinedPosition: PreviewJoinedCardPosition = .single {
         didSet {
@@ -643,12 +654,24 @@ private final class WindowPreviewCardView: NSView {
     private lazy var closeButton = PreviewControlButton(kind: .closeWindow, target: self, action: #selector(closeButtonClicked))
     private lazy var minimizeButton = PreviewControlButton(kind: .minimizeWindow, target: self, action: #selector(minimizeButtonClicked))
     private let thumbnailSize: NSSize
+    private let runningApplication: NSRunningApplication
     private let settings: AppSettings
     private var isHovered = false
+    private var isPointerInControlRegion = false
+    private var areControlButtonsVisible = false
+    private var controlVisibilityGeneration = 0
 
-    init(window: WindowInfo, appIcon: NSImage?, thumbnail: NSImage, thumbnailSize: NSSize, settings: AppSettings) {
+    init(
+        window: WindowInfo,
+        appIcon: NSImage?,
+        thumbnail: NSImage,
+        thumbnailSize: NSSize,
+        runningApplication: NSRunningApplication,
+        settings: AppSettings
+    ) {
         self.windowInfo = window
         self.thumbnailSize = thumbnailSize
+        self.runningApplication = runningApplication
         self.settings = settings
         super.init(frame: .zero)
 
@@ -661,11 +684,22 @@ private final class WindowPreviewCardView: NSView {
 
         setupBackdrop()
         setupViews(appIcon: appIcon, thumbnail: thumbnail)
+        applyControlConfiguration(animated: false)
         applyCurrentAppearance()
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(appSettingsChanged),
+            name: .appSettingsChanged,
+            object: settings
+        )
     }
 
     required init?(coder: NSCoder) {
         nil
+    }
+
+    deinit {
+        NotificationCenter.default.removeObserver(self)
     }
 
     func updateThumbnail(_ image: NSImage) {
@@ -693,22 +727,46 @@ private final class WindowPreviewCardView: NSView {
         trackingAreas.forEach(removeTrackingArea)
         addTrackingArea(NSTrackingArea(
             rect: bounds,
-            options: [.activeAlways, .mouseEnteredAndExited, .inVisibleRect],
+            options: [.activeAlways, .mouseEnteredAndExited, .mouseMoved, .inVisibleRect],
             owner: self,
             userInfo: nil
+        ))
+        addTrackingArea(NSTrackingArea(
+            rect: controlRevealRect,
+            options: [.activeAlways, .mouseEnteredAndExited],
+            owner: self,
+            userInfo: [TrackingAreaKind.controlRegion: true]
         ))
     }
 
     override func mouseEntered(with event: NSEvent) {
-        isHovered = true
-        applyCurrentAppearance()
-        setControlButtonsVisible(true)
+        if isControlRegionEvent(event) {
+            isPointerInControlRegion = true
+        } else {
+            isHovered = true
+            applyCurrentAppearance()
+        }
+        updateControlVisibility()
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        let location = convert(event.locationInWindow, from: nil)
+        let isInsideControlRegion = controlRevealRect.contains(location)
+        if isPointerInControlRegion != isInsideControlRegion {
+            isPointerInControlRegion = isInsideControlRegion
+            updateControlVisibility()
+        }
     }
 
     override func mouseExited(with event: NSEvent) {
-        isHovered = false
-        applyCurrentAppearance()
-        setControlButtonsVisible(false)
+        if isControlRegionEvent(event) {
+            isPointerInControlRegion = false
+        } else {
+            isHovered = false
+            isPointerInControlRegion = false
+            applyCurrentAppearance()
+        }
+        updateControlVisibility()
     }
 
     override func viewDidChangeEffectiveAppearance() {
@@ -720,16 +778,95 @@ private final class WindowPreviewCardView: NSView {
         onClick?(windowInfo)
     }
 
-    private func setControlButtonsVisible(_ visible: Bool) {
+    private var controlRevealRect: NSRect {
+        let height = min(bounds.height, PreviewPanelLayout.controlMaskHeight + 4)
+        return NSRect(
+            x: 0,
+            y: max(0, bounds.maxY - height),
+            width: min(bounds.width, PreviewPanelLayout.controlMaskWidth + 4),
+            height: height
+        )
+    }
+
+    private func isControlRegionEvent(_ event: NSEvent) -> Bool {
+        event.trackingArea?.userInfo?[TrackingAreaKind.controlRegion] as? Bool == true
+    }
+
+    private func updateControlVisibility() {
+        let shouldShow = isHovered && (
+            !settings.previewControlsRevealOnControlAreaOnly || isPointerInControlRegion
+        )
+        setControlButtonsVisible(shouldShow)
+    }
+
+    private func setControlButtonsVisible(_ visible: Bool, animated: Bool = true) {
+        guard visible != areControlButtonsVisible else { return }
+        areControlButtonsVisible = visible
+        controlVisibilityGeneration += 1
+        let generation = controlVisibilityGeneration
+
+        if visible {
+            controlStack.isHidden = false
+            controlMaskView.isHidden = false
+        } else {
+            for button in [quitButton, closeButton, minimizeButton] {
+                button.resetHoverState(animated: animated)
+            }
+        }
         quitButton.isEnabled = visible
         closeButton.isEnabled = visible
         minimizeButton.isEnabled = visible
+
+        let changes = {
+            self.controlStack.alphaValue = visible ? 1 : 0
+            self.controlMaskView.alphaValue = visible ? 1 : 0
+        }
+        let completeVisibilityChange = { [weak self] in
+            guard let self, self.controlVisibilityGeneration == generation, !visible else { return }
+            self.controlStack.isHidden = true
+            self.controlMaskView.isHidden = true
+        }
+        guard animated else {
+            changes()
+            completeVisibilityChange()
+            return
+        }
+
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0.07
             context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-            controlStack.animator().alphaValue = visible ? 1 : 0
-            controlMaskView.animator().alphaValue = visible ? 1 : 0
+            self.controlStack.animator().alphaValue = visible ? 1 : 0
+            self.controlMaskView.animator().alphaValue = visible ? 1 : 0
+        } completionHandler: {
+            completeVisibilityChange()
         }
+    }
+
+    private func applyControlConfiguration(animated: Bool) {
+        let hoverTargetSize = settings.previewControlHoverTargetSize
+        let enlargementEnabled = settings.previewControlHoverEnlargementEnabled
+        for button in [quitButton, closeButton, minimizeButton] {
+            button.configureHoverEnlargement(
+                enabled: enlargementEnabled,
+                targetSize: hoverTargetSize,
+                animated: animated
+            )
+        }
+
+        closeButton.toolTip = currentCloseAction == .quitApplication ? "退出此应用" : "关闭窗口"
+        updateControlVisibility()
+    }
+
+    private var currentCloseAction: PreviewCloseAction {
+        let currentApplication = NSRunningApplication(processIdentifier: runningApplication.processIdentifier)
+        return settings.previewCloseAction(
+            bundleIdentifier: currentApplication?.bundleIdentifier,
+            hasRunningApplication: currentApplication?.isTerminated == false
+        )
+    }
+
+    @objc private func appSettingsChanged() {
+        applyControlConfiguration(animated: true)
     }
 
     @objc private func quitApplicationButtonClicked() {
@@ -738,8 +875,14 @@ private final class WindowPreviewCardView: NSView {
     }
 
     @objc private func closeButtonClicked() {
+        let action = currentCloseAction
         setControlButtonsVisible(false)
-        onClose?(windowInfo)
+        switch action {
+        case .closeWindow:
+            onClose?(windowInfo)
+        case .quitApplication:
+            onRequestQuitApplication?(windowInfo)
+        }
     }
 
     @objc private func minimizeButtonClicked() {
@@ -839,6 +982,7 @@ private final class WindowPreviewCardView: NSView {
         contentStack.addArrangedSubview(imageView)
 
         controlMaskView.alphaValue = 0
+        controlMaskView.isHidden = true
         controlMaskView.translatesAutoresizingMaskIntoConstraints = false
         addSubview(controlMaskView)
 
@@ -846,6 +990,7 @@ private final class WindowPreviewCardView: NSView {
         controlStack.spacing = PreviewPanelLayout.controlSpacing
         controlStack.alignment = .centerY
         controlStack.alphaValue = 0
+        controlStack.isHidden = true
         controlStack.translatesAutoresizingMaskIntoConstraints = false
         controlStack.addArrangedSubview(quitButton)
         controlStack.addArrangedSubview(closeButton)
@@ -911,10 +1056,15 @@ private final class PreviewControlButton: NSButton {
 
     private let kind: Kind
     private var isHovered = false
+    private var hoverEnlargementEnabled = false
+    private var hoverTargetSize = AppSettings.defaultPreviewControlHoverTargetSize
+    @objc dynamic private var visualDiameter = PreviewPanelLayout.controlButtonSize {
+        didSet { needsDisplay = true }
+    }
 
     init(kind: Kind, target: AnyObject?, action: Selector) {
         self.kind = kind
-        let size = PreviewPanelLayout.controlButtonSize
+        let size = PreviewPanelLayout.controlButtonSlotSize
         super.init(frame: NSRect(x: 0, y: 0, width: size, height: size))
         self.target = target
         self.action = action
@@ -932,8 +1082,36 @@ private final class PreviewControlButton: NSButton {
         nil
     }
 
+    override class func defaultAnimation(forKey key: NSAnimatablePropertyKey) -> Any? {
+        if key == "visualDiameter" {
+            return CABasicAnimation()
+        }
+        return super.defaultAnimation(forKey: key)
+    }
+
+    func configureHoverEnlargement(enabled: Bool, targetSize: CGFloat, animated: Bool) {
+        hoverEnlargementEnabled = enabled
+        if targetSize.isFinite {
+            hoverTargetSize = max(
+                AppSettings.minimumPreviewControlSize,
+                min(AppSettings.maximumPreviewControlSize, targetSize)
+            )
+        } else {
+            hoverTargetSize = AppSettings.defaultPreviewControlHoverTargetSize
+        }
+        updateVisualDiameter(animated: animated)
+    }
+
+    func resetHoverState(animated: Bool) {
+        guard isHovered else { return }
+        isHovered = false
+        updateVisualDiameter(animated: animated)
+        needsDisplay = true
+    }
+
     override var intrinsicContentSize: NSSize {
-        NSSize(width: PreviewPanelLayout.controlButtonSize, height: PreviewPanelLayout.controlButtonSize)
+        let size = PreviewPanelLayout.controlButtonSlotSize
+        return NSSize(width: size, height: size)
     }
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
@@ -953,11 +1131,13 @@ private final class PreviewControlButton: NSButton {
 
     override func mouseEntered(with event: NSEvent) {
         isHovered = true
+        updateVisualDiameter(animated: true)
         needsDisplay = true
     }
 
     override func mouseExited(with event: NSEvent) {
         isHovered = false
+        updateVisualDiameter(animated: true)
         needsDisplay = true
     }
 
@@ -967,12 +1147,39 @@ private final class PreviewControlButton: NSButton {
         needsDisplay = true
     }
 
+    private func updateVisualDiameter(animated: Bool) {
+        let targetDiameter = hoverEnlargementEnabled && isHovered
+            ? hoverTargetSize
+            : PreviewPanelLayout.controlButtonSize
+        guard abs(visualDiameter - targetDiameter) > 0.01 else { return }
+
+        guard animated else {
+            visualDiameter = targetDiameter
+            return
+        }
+
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.11
+            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            self.animator().visualDiameter = targetDiameter
+        }
+    }
+
     override func resetCursorRects() {
         addCursorRect(bounds, cursor: .pointingHand)
     }
 
     override func draw(_ dirtyRect: NSRect) {
-        let circleRect = bounds.insetBy(dx: 0.35, dy: 0.35)
+        let diameter = max(
+            AppSettings.minimumPreviewControlSize,
+            min(AppSettings.maximumPreviewControlSize, visualDiameter)
+        )
+        let circleRect = NSRect(
+            x: bounds.midX - diameter / 2,
+            y: bounds.midY - diameter / 2,
+            width: diameter,
+            height: diameter
+        ).insetBy(dx: 0.35, dy: 0.35)
         NSColor(calibratedWhite: 0, alpha: isHighlighted ? 0.26 : 0.14).setFill()
         NSBezierPath(ovalIn: circleRect.offsetBy(dx: 0, dy: -0.6)).fill()
 

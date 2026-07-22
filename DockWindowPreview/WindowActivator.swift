@@ -128,6 +128,33 @@ final class WindowActivator {
     }
 
     @discardableResult
+    func minimize(_ windows: [WindowInfo]) -> Int {
+        windows.reduce(into: 0) { minimizedCount, window in
+            guard !window.isMinimized, minimize(window) else { return }
+            minimizedCount += 1
+        }
+    }
+
+    @discardableResult
+    func gracefulQuitApplication(ownerPID: pid_t) -> Bool {
+        guard let app = NSRunningApplication(processIdentifier: ownerPID) else {
+            DWLog("Cannot find running application to gracefully quit for pid \(ownerPID)")
+            return false
+        }
+
+        if ownerPID == ProcessInfo.processInfo.processIdentifier {
+            NSApp.terminate(nil)
+            return true
+        }
+
+        let didRequestTermination = app.terminate()
+        if !didRequestTermination {
+            DWLog("Graceful terminate failed for pid \(ownerPID)")
+        }
+        return didRequestTermination
+    }
+
+    @discardableResult
     func quitApplication(ownerPID: pid_t) -> Bool {
         guard let app = NSRunningApplication(processIdentifier: ownerPID) else {
             DWLog("Cannot find running application to quit for pid \(ownerPID)")

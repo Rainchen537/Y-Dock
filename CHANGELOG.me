@@ -4,6 +4,17 @@
 
 不要在这里记录 token、证书密码、Apple ID、notary 密码等敏感信息。
 
+## 2026-07-23
+
+- 准备发布 `v1.1.21 (46)`，同步更新 Xcode 版本、README 双架构下载链接、公开 changelog、AI_CONTEXT 与维护记录。
+- 新增 Dock 主按钮点击最小化策略：默认关闭，可选择仅单窗口 App 或所有窗口；只响应无修饰键的主按钮点击，并严格要求目标 App 在点击前已经是前台，后台 App 点击继续保留系统原生激活行为。点击命中使用公开 Accessibility API 严格识别 `AXDockItem / AXApplicationDockItem`，多窗口模式批量最小化当前未最小化的用户窗口。
+- 增加前台 App 快照与 `NSWorkspace.didActivateApplicationNotification` 时序保护，系统当前 PID、观察器 PID、最后 pointer-move 快照和激活时间必须共同确认目标在点击前已是前台；修复鼠标停在 A 后用键盘切到 B、再不移动鼠标点击 A 时可能误最小化的竞态。对应纯策略测试覆盖激活通知到达前后、激活后重新移动鼠标及各类 PID 不匹配。
+- 预览卡片左上控制按钮新增可开关的 hover 放大效果，目标直径可在 `16.5–30pt` 范围连续调整并在设置页预览；按钮保持固定 `30pt` slot，只动画绘制直径，避免卡片和相邻按钮抖动。
+- 新增隐藏式左上控制按钮：开启后按钮默认真实隐藏并禁用 hit-test，仅进入左上控制区域时显示；局部 tracking 不使用会忽略自定义 rect 的 `.inVisibleRect`，隐藏动画带 generation 防护并重置残留 hover 状态。
+- 红色关闭按钮新增 graceful quit 策略，支持全部 App、黑名单和白名单三种模式；名单以 bundle identifier 独立持久化，切换模式或关闭总开关不会丢失。策略退出只调用 `NSRunningApplication.terminate()`；原紫色显式退出按钮和 Option+Tab 单窗口关闭入口保持原行为。
+- 新设置默认全部关闭。standalone 策略测试分别以 thin `arm64`、`x86_64` 编译运行通过；`release.sh` 现会在读取签名/公证配置前，连同原 updater selector 测试一起执行两种架构的 AppSettings 策略测试并断言测试二进制为目标单一架构。
+- `v1.1.21 (46)` 最新源码的 arm64 Debug、arm64 Release、x86_64 Release 无签名构建均成功，三个 App 主可执行文件分别确认为对应单一架构；原 updater selector 测试与新增设置策略测试也均在两种架构运行通过。设置页布局已通过截图检查，临时预览进程已关闭；正式 Dock/AX 交互仍应从最终签名、公证 DMG 安装的 `/Applications/Y-Dock.app` 验证。
+
 ## 2026-07-22
 
 - 准备安全补丁 `v1.1.20 (45)`：自动更新把 GitHub Release 的规范化版本贯穿到下载、挂载和安装脚本；只有严格高于当前版本且与下载 App 的 `CFBundleShortVersionString` 完全一致时才继续，旧包改名、同版本、降级和异常版本都会安全停止。

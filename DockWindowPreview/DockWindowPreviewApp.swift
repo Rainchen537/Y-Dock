@@ -37,7 +37,9 @@ final class DockWindowPreviewApp: NSObject, NSApplicationDelegate {
     private var isDockContextMenuProtectionActive = false
     private var dockContextMenuProtectionStartedAt: TimeInterval?
     private var dockContextMenuProtectionWorkItem: DispatchWorkItem?
+    private var dockPrimaryClickWorkItem: DispatchWorkItem?
     private let dockContextMenuMinimumProtectionDuration: TimeInterval = 0.65
+    private let dockPrimaryClickResponseDelay: TimeInterval = 0.065
 
     private lazy var previewPanel: PreviewPanel = {
         let panel = PreviewPanel(thumbnailProvider: thumbnailProvider, settings: settings)
@@ -54,6 +56,9 @@ final class DockWindowPreviewApp: NSObject, NSApplicationDelegate {
         }
         panel.onQuitApplication = { [weak self] window in
             self?.quitApplicationFromPreview(window)
+        }
+        panel.onRequestQuitApplication = { [weak self] window in
+            self?.requestQuitApplicationFromPreview(window)
         }
         return panel
     }()
@@ -83,6 +88,9 @@ final class DockWindowPreviewApp: NSObject, NSApplicationDelegate {
         }
         tracker.onDockContextMenuInteractionEnded = { [weak self] in
             self?.endDockContextMenuProtectionAfterMenuCloses()
+        }
+        tracker.onDockPrimaryClick = { [weak self] item, wasFrontmost, _ in
+            self?.handleDockPrimaryClick(item, wasFrontmost: wasFrontmost)
         }
         return tracker
     }()
@@ -120,6 +128,8 @@ final class DockWindowPreviewApp: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         cancelPreviewPrewarm()
         cancelDockContextMenuProtectionTimer()
+        dockPrimaryClickWorkItem?.cancel()
+        dockPrimaryClickWorkItem = nil
         optionTabSwitcher.stop()
         mouseTracker.stop()
     }
@@ -214,6 +224,46 @@ final class DockWindowPreviewApp: NSObject, NSApplicationDelegate {
 
         previewContext = PreviewContext(appPID: app.processIdentifier, anchor: anchor, dockEdge: dockItem.dockEdge)
         previewPanel.show(windows: windows, app: app, anchor: anchor, dockEdge: dockItem.dockEdge)
+    }
+
+    private func handleDockPrimaryClick(_ dockItem: DockItem, wasFrontmost: Bool) {
+        guard
+            wasFrontmost,
+            settings.dockClickMinimizeMode != .off,
+            let app = dockItem.runningApplication
+        else {
+            return
+        }
+
+        dockPrimaryClickWorkItem?.cancel()
+        let pid = app.processIdentifier
+        let workItem = DispatchWorkItem { [weak self] in
+            guard
+                let self,
+                let runningApp = NSRunningApplication(processIdentifier: pid),
+                !runningApp.isTerminated
+            else {
+                return
+            }
+
+            self.dockPrimaryClickWorkItem = nil
+            let windows = self.windowCollector.windows(for: runningApp)
+            guard DockClickMinimizePolicy.shouldMinimize(
+                mode: self.settings.dockClickMinimizeMode,
+                totalWindowCount: windows.count
+            ) else {
+                return
+            }
+
+            let minimizedCount = self.windowActivator.minimize(windows.filter { !$0.isMinimized })
+            guard minimizedCount > 0 else { return }
+
+            self.invalidatePreviewCaches(ownerPID: pid)
+            self.previewPanel.hide()
+            self.previewContext = nil
+        }
+        dockPrimaryClickWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + dockPrimaryClickResponseDelay, execute: workItem)
     }
 
     private func beginDockContextMenuProtection(at point: NSPoint) {
@@ -327,6 +377,17 @@ final class DockWindowPreviewApp: NSObject, NSApplicationDelegate {
     private func quitApplicationFromPreview(_ window: WindowInfo) {
         invalidatePreviewCaches(ownerPID: window.ownerPID)
         guard windowActivator.quitApplication(ownerPID: window.ownerPID) else {
+            NSSound.beep()
+            return
+        }
+
+        previewPanel.hide()
+        previewContext = nil
+    }
+
+    private func requestQuitApplicationFromPreview(_ window: WindowInfo) {
+        invalidatePreviewCaches(ownerPID: window.ownerPID)
+        guard windowActivator.gracefulQuitApplication(ownerPID: window.ownerPID) else {
             NSSound.beep()
             return
         }

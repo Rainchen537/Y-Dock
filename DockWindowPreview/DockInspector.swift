@@ -18,6 +18,7 @@ struct DockItem {
     let title: String
     let accessibilityDescription: String?
     let role: String?
+    let subrole: String?
     let frame: CGRect?
     let dockEdge: DockEdge
     let runningApplication: NSRunningApplication?
@@ -38,6 +39,11 @@ struct DockItem {
 }
 
 final class DockInspector {
+    private enum AXDockRole {
+        static let dockItem = "AXDockItem"
+        static let applicationDockItem = "AXApplicationDockItem"
+    }
+
     func dockRegion(containing point: NSPoint) -> DockRegion? {
         guard let screen = screen(containing: point) ?? NSScreen.main else { return nil }
 
@@ -104,7 +110,7 @@ final class DockInspector {
                 continue
             }
 
-            if let item = bestDockItem(from: element, edge: region.edge) {
+            if let item = bestDockItem(from: element, edge: region.edge, strictApplicationOnly: false) {
                 return item
             }
         }
@@ -113,7 +119,31 @@ final class DockInspector {
         return nil
     }
 
-    private func bestDockItem(from element: AXUIElement, edge: DockEdge) -> DockItem? {
+    func applicationDockItem(at point: NSPoint, in region: DockRegion) -> DockItem? {
+        guard AXIsProcessTrusted() else { return nil }
+        guard let dockApp = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier == "com.apple.dock" }) else {
+            return nil
+        }
+
+        let dockElement = AXUIElementCreateApplication(dockApp.processIdentifier)
+        for lookupPoint in accessibilityLookupPoints(for: point, on: region.screen) {
+            var element: AXUIElement?
+            let error = AXUIElementCopyElementAtPosition(dockElement, Float(lookupPoint.x), Float(lookupPoint.y), &element)
+            guard error == .success, let element else { continue }
+
+            if let item = bestDockItem(from: element, edge: region.edge, strictApplicationOnly: true) {
+                return item
+            }
+        }
+
+        return nil
+    }
+
+    private func bestDockItem(
+        from element: AXUIElement,
+        edge: DockEdge,
+        strictApplicationOnly: Bool
+    ) -> DockItem? {
         var candidates: [AXUIElement] = [element]
         if let parent = elementAttribute(element, attribute: kAXParentAttribute) as AXUIElement? {
             candidates.append(parent)
@@ -126,7 +156,13 @@ final class DockInspector {
             let title = stringAttribute(candidate, attribute: kAXTitleAttribute)
             let description = stringAttribute(candidate, attribute: kAXDescriptionAttribute)
             let role = stringAttribute(candidate, attribute: kAXRoleAttribute)
+            let subrole = stringAttribute(candidate, attribute: kAXSubroleAttribute)
             let identifier = stringAttribute(candidate, attribute: kAXIdentifierAttribute)
+
+            if strictApplicationOnly,
+               (role != AXDockRole.dockItem || subrole != AXDockRole.applicationDockItem) {
+                continue
+            }
 
             let displayTitle = bestDisplayName(title: title, description: description, identifier: identifier)
             guard let displayTitle, !displayTitle.isEmpty, displayTitle.lowercased() != "dock" else {
@@ -138,12 +174,16 @@ final class DockInspector {
             let app = runningApplication(forDockTitle: displayTitle, description: description, identifier: identifier)
             if app == nil {
                 DWLog("Dock item '\(displayTitle)' did not map to a running app. role=\(role ?? "nil") description=\(description ?? "nil")")
+                if strictApplicationOnly {
+                    continue
+                }
             }
 
             return DockItem(
                 title: displayTitle,
                 accessibilityDescription: description,
                 role: role,
+                subrole: subrole,
                 frame: frame(of: candidate),
                 dockEdge: edge,
                 runningApplication: app

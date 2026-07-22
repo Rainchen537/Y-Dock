@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import UniformTypeIdentifiers
 
 final class SettingsWindowController: NSObject {
     private let contentController: SettingsContentController
@@ -71,6 +72,18 @@ private final class SettingsContentController {
     private let hoverDelayValuePill = YSettingPill(text: "100 ms", tone: .accent)
     private let thumbnailSlider = NSSlider(value: 165, minValue: 100, maxValue: 260, target: nil, action: nil)
     private let thumbnailValuePill = YSettingPill(text: "165 px", tone: .neutral)
+    private let controlHoverSizeSlider = NSSlider(
+        value: Double(AppSettings.defaultPreviewControlHoverTargetSize),
+        minValue: Double(AppSettings.minimumPreviewControlSize),
+        maxValue: Double(AppSettings.maximumPreviewControlSize),
+        target: nil,
+        action: nil
+    )
+    private let controlHoverSizeValuePill = YSettingPill(text: "23.0 px", tone: .accent)
+    private let controlHoverSizePreview = PreviewControlSizeSampleView()
+    private let dockClickMinimizeModePopUp = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let previewCloseQuitModePopUp = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let closePolicyListStack = NSStackView()
     private let launchAtLoginStatusPill = YSettingPill(text: "未开启", tone: .neutral)
     private let updateStatusPill = YSettingPill(text: "", tone: .neutral)
     private let accessibilityStatusPill = YSettingPill(text: "检测中", tone: .neutral)
@@ -79,6 +92,9 @@ private final class SettingsContentController {
     private let optionTabShortcutPill = YSettingPill(text: "⌥ Tab", tone: .accent)
 
     private lazy var showTitleSwitch = YSettingUI.makeSwitch(target: self, action: #selector(showTitleChanged(_:)))
+    private lazy var controlHoverEnlargementSwitch = YSettingUI.makeSwitch(target: self, action: #selector(controlHoverEnlargementChanged(_:)))
+    private lazy var controlRegionRevealSwitch = YSettingUI.makeSwitch(target: self, action: #selector(controlRegionRevealChanged(_:)))
+    private lazy var previewCloseQuitsApplicationSwitch = YSettingUI.makeSwitch(target: self, action: #selector(previewCloseQuitsApplicationChanged(_:)))
     private lazy var launchAtLoginSwitch = YSettingUI.makeSwitch(target: self, action: #selector(launchAtLoginChanged(_:)))
     private lazy var debugSwitch = YSettingUI.makeSwitch(target: self, action: #selector(debugChanged(_:)))
     private lazy var openLoginItemsButton = makeButton(title: "登录项", symbolName: "person.crop.circle.badge.checkmark", action: #selector(openLoginItemsSettings))
@@ -93,6 +109,12 @@ private final class SettingsContentController {
     private lazy var requestAllButton = makeButton(title: "请求缺失权限", symbolName: "lock.open", role: .primary, action: #selector(requestAllPermissions))
     private lazy var resetPermissionsButton = makeButton(title: "刷新权限记录", symbolName: "arrow.counterclockwise", action: #selector(resetPrivacyPermissions))
     private lazy var recheckButton = makeButton(title: "重新检测", symbolName: "checkmark.shield", action: #selector(recheckPermissions))
+    private lazy var addClosePolicyApplicationButton = makeButton(
+        title: "添加 App",
+        symbolName: "plus.app",
+        role: .primary,
+        action: #selector(addClosePolicyApplication)
+    )
 
     private var isObservingApplicationActivation = false
 
@@ -190,7 +212,33 @@ private final class SettingsContentController {
                 YSettingUI.sliderRow(title: "悬停延迟", slider: hoverDelaySlider, valueView: hoverDelayValuePill),
                 YSettingUI.sliderRow(title: "缩略图高度", slider: thumbnailSlider, valueView: thumbnailValuePill),
                 YSettingUI.divider(),
-                YSettingUI.row(title: "显示窗口标题", trailingView: showTitleSwitch)
+                YSettingUI.row(title: "显示窗口标题", trailingView: showTitleSwitch),
+                YSettingUI.row(title: "控制按钮仅在左上区域显示", trailingView: controlRegionRevealSwitch),
+                YSettingUI.row(title: "控制按钮 hover 放大", trailingView: controlHoverEnlargementSwitch),
+                YSettingUI.sliderRow(
+                    title: "按钮 hover 大小",
+                    slider: controlHoverSizeSlider,
+                    valueView: YSettingUI.horizontal([controlHoverSizePreview, controlHoverSizeValuePill], spacing: 6)
+                )
+            ]
+        ))
+
+        stack.addArrangedSubview(YSettingSectionView(
+            title: "Dock 点击",
+            symbolName: "cursorarrow.click.2",
+            views: [
+                YSettingUI.row(title: "点击前台 App 图标时最小化", trailingView: dockClickMinimizeModePopUp)
+            ]
+        ))
+
+        rebuildClosePolicyList()
+        stack.addArrangedSubview(YSettingSectionView(
+            title: "关闭按钮",
+            symbolName: "xmark.circle",
+            views: [
+                YSettingUI.row(title: "改为请求退出 App", trailingView: previewCloseQuitsApplicationSwitch),
+                YSettingUI.row(title: "应用范围", trailingView: previewCloseQuitModePopUp),
+                closePolicyListStack
             ]
         ))
 
@@ -315,14 +363,147 @@ private final class SettingsContentController {
         YSettingUI.makeButton(title: title, symbolName: symbolName, role: role, target: self, action: action)
     }
 
+    private func configureModePopUp(
+        _ popUpButton: NSPopUpButton,
+        values: [(title: String, rawValue: String)],
+        action: Selector
+    ) {
+        popUpButton.removeAllItems()
+        for value in values {
+            popUpButton.addItem(withTitle: value.title)
+            popUpButton.lastItem?.representedObject = value.rawValue
+        }
+        popUpButton.controlSize = .small
+        popUpButton.target = self
+        popUpButton.action = action
+    }
+
+    private func selectMode(_ rawValue: String, in popUpButton: NSPopUpButton) {
+        if let item = popUpButton.itemArray.first(where: { $0.representedObject as? String == rawValue }) {
+            popUpButton.select(item)
+        } else {
+            popUpButton.selectItem(at: 0)
+        }
+    }
+
+    private func rebuildClosePolicyList() {
+        closePolicyListStack.arrangedSubviews.forEach { view in
+            closePolicyListStack.removeArrangedSubview(view)
+            view.removeFromSuperview()
+        }
+
+        let mode = settings.previewCloseQuitMode
+        guard mode != .all else {
+            closePolicyListStack.isHidden = true
+            return
+        }
+
+        closePolicyListStack.isHidden = false
+        closePolicyListStack.addArrangedSubview(YSettingUI.divider())
+        closePolicyListStack.addArrangedSubview(YSettingUI.row(
+            title: mode == .blacklist ? "黑名单 App" : "白名单 App",
+            trailingView: addClosePolicyApplicationButton
+        ))
+
+        let bundleIdentifiers = mode == .blacklist
+            ? settings.previewCloseQuitBlacklist
+            : settings.previewCloseQuitWhitelist
+
+        if bundleIdentifiers.isEmpty {
+            closePolicyListStack.addArrangedSubview(YSettingUI.row(
+                title: "列表",
+                trailingView: YSettingPill(text: "尚未添加", tone: .neutral)
+            ))
+            return
+        }
+
+        for bundleIdentifier in bundleIdentifiers.sorted() {
+            closePolicyListStack.addArrangedSubview(applicationPolicyRow(bundleIdentifier: bundleIdentifier))
+        }
+    }
+
+    private func applicationPolicyRow(bundleIdentifier: String) -> NSView {
+        let runningApplication = NSWorkspace.shared.runningApplications.first {
+            $0.bundleIdentifier == bundleIdentifier && !$0.isTerminated
+        }
+        let applicationURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleIdentifier)
+        let applicationBundle = applicationURL.flatMap(Bundle.init(url:))
+        let displayName = runningApplication?.localizedName
+            ?? (applicationBundle?.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String)
+            ?? (applicationBundle?.object(forInfoDictionaryKey: "CFBundleName") as? String)
+            ?? applicationURL?.deletingPathExtension().lastPathComponent
+            ?? bundleIdentifier
+        let icon = runningApplication?.icon
+            ?? applicationURL.map { NSWorkspace.shared.icon(forFile: $0.path) }
+            ?? NSImage(systemSymbolName: "app", accessibilityDescription: displayName)
+
+        let iconView = NSImageView(image: icon ?? NSImage())
+        iconView.imageScaling = .scaleProportionallyUpOrDown
+        iconView.widthAnchor.constraint(equalToConstant: 30).isActive = true
+        iconView.heightAnchor.constraint(equalToConstant: 30).isActive = true
+
+        let nameLabel = NSTextField(labelWithString: displayName)
+        nameLabel.font = NSFont.systemFont(ofSize: 12, weight: .semibold)
+        nameLabel.lineBreakMode = .byTruncatingTail
+        nameLabel.maximumNumberOfLines = 1
+
+        let bundleIdentifierLabel = NSTextField(labelWithString: bundleIdentifier)
+        bundleIdentifierLabel.font = NSFont.monospacedSystemFont(ofSize: 10, weight: .regular)
+        bundleIdentifierLabel.textColor = .secondaryLabelColor
+        bundleIdentifierLabel.lineBreakMode = .byTruncatingMiddle
+        bundleIdentifierLabel.maximumNumberOfLines = 1
+
+        let metadataStack = NSStackView(views: [nameLabel, bundleIdentifierLabel])
+        metadataStack.orientation = .vertical
+        metadataStack.alignment = .leading
+        metadataStack.spacing = 2
+        metadataStack.setContentHuggingPriority(.defaultLow, for: .horizontal)
+
+        let removeButton = makeButton(
+            title: "移除",
+            symbolName: "minus.circle",
+            action: #selector(removeClosePolicyApplication(_:))
+        )
+        removeButton.identifier = NSUserInterfaceItemIdentifier(bundleIdentifier)
+
+        let row = NSStackView(views: [iconView, metadataStack, YSettingUI.spacer(), removeButton])
+        row.orientation = .horizontal
+        row.alignment = .centerY
+        row.spacing = 10
+        row.heightAnchor.constraint(greaterThanOrEqualToConstant: 38).isActive = true
+        return row
+    }
+
     private func configureControls() {
         hoverDelaySlider.target = self
         hoverDelaySlider.action = #selector(hoverDelayChanged(_:))
         hoverDelaySlider.controlSize = .small
+        hoverDelaySlider.isContinuous = true
 
         thumbnailSlider.target = self
         thumbnailSlider.action = #selector(thumbnailSizeChanged(_:))
         thumbnailSlider.controlSize = .small
+        thumbnailSlider.isContinuous = true
+
+        controlHoverSizeSlider.target = self
+        controlHoverSizeSlider.action = #selector(controlHoverSizeChanged(_:))
+        controlHoverSizeSlider.controlSize = .small
+        controlHoverSizeSlider.isContinuous = true
+
+        configureModePopUp(
+            dockClickMinimizeModePopUp,
+            values: DockClickMinimizeMode.allCases.map { ($0.displayName, $0.rawValue) },
+            action: #selector(dockClickMinimizeModeChanged(_:))
+        )
+        configureModePopUp(
+            previewCloseQuitModePopUp,
+            values: PreviewCloseQuitMode.allCases.map { ($0.displayName, $0.rawValue) },
+            action: #selector(previewCloseQuitModeChanged(_:))
+        )
+
+        closePolicyListStack.orientation = .vertical
+        closePolicyListStack.alignment = .width
+        closePolicyListStack.spacing = 8
 
         updateStatusPill.setText("v\(updateChecker.currentVersion)", tone: .neutral)
     }
@@ -335,6 +516,18 @@ private final class SettingsContentController {
         thumbnailValuePill.setText(String(format: "%.0f px", settings.thumbnailHeight), tone: .neutral)
 
         showTitleSwitch.state = settings.showWindowTitles ? .on : .off
+        controlRegionRevealSwitch.state = settings.previewControlsRevealOnControlAreaOnly ? .on : .off
+        controlHoverEnlargementSwitch.state = settings.previewControlHoverEnlargementEnabled ? .on : .off
+        controlHoverSizeSlider.doubleValue = Double(settings.previewControlHoverTargetSize)
+        controlHoverSizeValuePill.setText(
+            String(format: "%.1f px", settings.previewControlHoverTargetSize),
+            tone: .accent
+        )
+        controlHoverSizePreview.diameter = settings.previewControlHoverTargetSize
+        selectMode(settings.dockClickMinimizeMode.rawValue, in: dockClickMinimizeModePopUp)
+        previewCloseQuitsApplicationSwitch.state = settings.previewCloseQuitsApplicationEnabled ? .on : .off
+        selectMode(settings.previewCloseQuitMode.rawValue, in: previewCloseQuitModePopUp)
+        rebuildClosePolicyList()
         debugSwitch.state = settings.debugLoggingEnabled ? .on : .off
         refreshLaunchAtLoginStatus()
         refreshPermissionStatus()
@@ -413,6 +606,118 @@ private final class SettingsContentController {
     @objc private func thumbnailSizeChanged(_ sender: NSSlider) {
         settings.thumbnailHeight = CGFloat(sender.doubleValue)
         refreshValues()
+    }
+
+    @objc private func controlHoverEnlargementChanged(_ sender: NSSwitch) {
+        settings.previewControlHoverEnlargementEnabled = sender.state == .on
+        refreshValues()
+    }
+
+    @objc private func controlHoverSizeChanged(_ sender: NSSlider) {
+        settings.previewControlHoverTargetSize = CGFloat(sender.doubleValue)
+        refreshValues()
+    }
+
+    @objc private func controlRegionRevealChanged(_ sender: NSSwitch) {
+        settings.previewControlsRevealOnControlAreaOnly = sender.state == .on
+        refreshValues()
+    }
+
+    @objc private func dockClickMinimizeModeChanged(_ sender: NSPopUpButton) {
+        guard
+            let rawValue = sender.selectedItem?.representedObject as? String,
+            let mode = DockClickMinimizeMode(rawValue: rawValue)
+        else {
+            settings.dockClickMinimizeMode = .off
+            refreshValues()
+            return
+        }
+        settings.dockClickMinimizeMode = mode
+        refreshValues()
+    }
+
+    @objc private func previewCloseQuitsApplicationChanged(_ sender: NSSwitch) {
+        settings.previewCloseQuitsApplicationEnabled = sender.state == .on
+        refreshValues()
+    }
+
+    @objc private func previewCloseQuitModeChanged(_ sender: NSPopUpButton) {
+        guard
+            let rawValue = sender.selectedItem?.representedObject as? String,
+            let mode = PreviewCloseQuitMode(rawValue: rawValue)
+        else {
+            settings.previewCloseQuitMode = .all
+            refreshValues()
+            return
+        }
+        settings.previewCloseQuitMode = mode
+        refreshValues()
+    }
+
+    @objc private func addClosePolicyApplication() {
+        guard settings.previewCloseQuitMode != .all else { return }
+
+        let panel = NSOpenPanel()
+        panel.title = settings.previewCloseQuitMode == .blacklist ? "添加到黑名单" : "添加到白名单"
+        panel.prompt = "添加"
+        panel.directoryURL = URL(fileURLWithPath: "/Applications", isDirectory: true)
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.allowedContentTypes = [.applicationBundle]
+
+        panel.begin { [weak self] response in
+            guard response == .OK, let self, let applicationURL = panel.url else { return }
+            guard
+                applicationURL.pathExtension.lowercased() == "app",
+                let bundleIdentifier = Bundle(url: applicationURL)?.bundleIdentifier,
+                !bundleIdentifier.isEmpty
+            else {
+                self.showMissingBundleIdentifierAlert()
+                return
+            }
+
+            switch self.settings.previewCloseQuitMode {
+            case .blacklist:
+                var identifiers = self.settings.previewCloseQuitBlacklist
+                identifiers.insert(bundleIdentifier)
+                self.settings.previewCloseQuitBlacklist = identifiers
+            case .whitelist:
+                var identifiers = self.settings.previewCloseQuitWhitelist
+                identifiers.insert(bundleIdentifier)
+                self.settings.previewCloseQuitWhitelist = identifiers
+            case .all:
+                return
+            }
+            self.refreshValues()
+        }
+    }
+
+    @objc private func removeClosePolicyApplication(_ sender: NSButton) {
+        guard let bundleIdentifier = sender.identifier?.rawValue else { return }
+
+        switch settings.previewCloseQuitMode {
+        case .blacklist:
+            var identifiers = settings.previewCloseQuitBlacklist
+            identifiers.remove(bundleIdentifier)
+            settings.previewCloseQuitBlacklist = identifiers
+        case .whitelist:
+            var identifiers = settings.previewCloseQuitWhitelist
+            identifiers.remove(bundleIdentifier)
+            settings.previewCloseQuitWhitelist = identifiers
+        case .all:
+            return
+        }
+        refreshValues()
+    }
+
+    private func showMissingBundleIdentifierAlert() {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "无法添加此 App"
+        alert.informativeText = "所选 .app 没有可读取的 bundle ID。"
+        alert.addButton(withTitle: "好")
+        alert.runModal()
     }
 
     @objc private func showTitleChanged(_ sender: NSSwitch) {
@@ -639,5 +944,51 @@ private final class SettingsContentController {
         alert.messageText = "自动更新失败"
         alert.informativeText = error.localizedDescription
         alert.runModal()
+    }
+}
+
+private final class PreviewControlSizeSampleView: NSView {
+    var diameter = AppSettings.defaultPreviewControlHoverTargetSize {
+        didSet {
+            if !diameter.isFinite {
+                diameter = AppSettings.defaultPreviewControlHoverTargetSize
+                return
+            }
+            diameter = max(
+                AppSettings.minimumPreviewControlSize,
+                min(AppSettings.maximumPreviewControlSize, diameter)
+            )
+            needsDisplay = true
+        }
+    }
+
+    override var intrinsicContentSize: NSSize {
+        NSSize(
+            width: AppSettings.maximumPreviewControlSize,
+            height: AppSettings.maximumPreviewControlSize
+        )
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let circleRect = NSRect(
+            x: bounds.midX - diameter / 2,
+            y: bounds.midY - diameter / 2,
+            width: diameter,
+            height: diameter
+        ).insetBy(dx: 0.35, dy: 0.35)
+
+        NSColor(calibratedRed: 1.00, green: 0.37, blue: 0.34, alpha: 1).setFill()
+        NSBezierPath(ovalIn: circleRect).fill()
+
+        NSColor(calibratedWhite: 0.16, alpha: 0.72).setStroke()
+        let path = NSBezierPath()
+        let inset = circleRect.width * 0.32
+        path.lineWidth = max(1.1, circleRect.width * 0.085)
+        path.lineCapStyle = .round
+        path.move(to: NSPoint(x: circleRect.minX + inset, y: circleRect.minY + inset))
+        path.line(to: NSPoint(x: circleRect.maxX - inset, y: circleRect.maxY - inset))
+        path.move(to: NSPoint(x: circleRect.maxX - inset, y: circleRect.minY + inset))
+        path.line(to: NSPoint(x: circleRect.minX + inset, y: circleRect.maxY - inset))
+        path.stroke()
     }
 }

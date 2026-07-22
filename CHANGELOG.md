@@ -2,6 +2,14 @@
 
 All notable Y-Dock release changes are tracked here.
 
+## v1.1.21 - 2026-07-23
+
+- Added an optional Dock-click action with off, single-window-only, and all-window modes. It minimizes only an app that was already frontmost before the unmodified primary click, preserving native activation for background apps.
+- Added adjustable hover enlargement for the three preview-card controls, with a live size preview and fixed layout slots that prevent neighboring controls or cards from shifting.
+- Added an option to keep preview-card controls hidden until the pointer enters the card's upper-left control area.
+- Added a graceful-quit policy for the red close control with all-app, blacklist, and whitelist modes; blacklist and whitelist entries are stored independently by bundle identifier.
+- Kept the explicit purple quit control and the `Option+Tab` single-window close control independent from the new red-button policy.
+
 ## v1.1.20 - 2026-07-22
 
 - Bound the expected GitHub Release version to every direct-update stage and reject same-version, downgrade, malformed, or renamed older App bundles.
