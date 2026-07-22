@@ -747,6 +747,9 @@ private final class WindowPreviewCardView: NSView {
             applyCurrentAppearance()
         }
         updateControlVisibility()
+        updateControlButtonHover(
+            at: convert(event.locationInWindow, from: nil)
+        )
     }
 
     override func mouseMoved(with event: NSEvent) {
@@ -756,6 +759,7 @@ private final class WindowPreviewCardView: NSView {
             isPointerInControlRegion = isInsideControlRegion
             updateControlVisibility()
         }
+        updateControlButtonHover(at: location)
     }
 
     override func mouseExited(with event: NSEvent) {
@@ -767,6 +771,9 @@ private final class WindowPreviewCardView: NSView {
             applyCurrentAppearance()
         }
         updateControlVisibility()
+        updateControlButtonHover(
+            at: convert(event.locationInWindow, from: nil)
+        )
     }
 
     override func viewDidChangeEffectiveAppearance() {
@@ -797,6 +804,22 @@ private final class WindowPreviewCardView: NSView {
             !settings.previewControlsRevealOnControlAreaOnly || isPointerInControlRegion
         )
         setControlButtonsVisible(shouldShow)
+    }
+
+    private func updateControlButtonHover(
+        at location: NSPoint,
+        animated: Bool = true
+    ) {
+        let buttons = [quitButton, closeButton, minimizeButton]
+        for button in buttons {
+            let locationInButton = button.convert(location, from: self)
+            button.setHovered(
+                areControlButtonsVisible
+                    && !button.isHidden
+                    && button.bounds.contains(locationInButton),
+                animated: animated
+            )
+        }
     }
 
     private func setControlButtonsVisible(_ visible: Bool, animated: Bool = true) {
@@ -1102,11 +1125,15 @@ private final class PreviewControlButton: NSButton {
         updateVisualDiameter(animated: animated)
     }
 
-    func resetHoverState(animated: Bool) {
-        guard isHovered else { return }
-        isHovered = false
+    func setHovered(_ hovered: Bool, animated: Bool) {
+        guard isHovered != hovered else { return }
+        isHovered = hovered
         updateVisualDiameter(animated: animated)
         needsDisplay = true
+    }
+
+    func resetHoverState(animated: Bool) {
+        setHovered(false, animated: animated)
     }
 
     override var intrinsicContentSize: NSSize {
@@ -1130,15 +1157,11 @@ private final class PreviewControlButton: NSButton {
     }
 
     override func mouseEntered(with event: NSEvent) {
-        isHovered = true
-        updateVisualDiameter(animated: true)
-        needsDisplay = true
+        setHovered(true, animated: true)
     }
 
     override func mouseExited(with event: NSEvent) {
-        isHovered = false
-        updateVisualDiameter(animated: true)
-        needsDisplay = true
+        setHovered(false, animated: true)
     }
 
     override func mouseDown(with event: NSEvent) {
