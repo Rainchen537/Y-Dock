@@ -2,6 +2,12 @@
 
 All notable Y-Dock release changes are tracked here.
 
+## v1.1.22 - 2026-07-23
+
+- Fixed preview-card controls that could remain hidden when the pointer entered the upper-left control area through title or icon subviews; hover enlargement and the red close action now receive the intended real pointer path.
+- Dock-click minimization now requires both that the target App was already frontmost and that one of its ordinary user windows was at the top of the pre-click window stack. Windows from Y-Dock, the Dock or desktop, transparent/non-regular windows, and menu-bar-like records do not override the real topmost owner.
+- Kept topmost-window sampling disabled when Dock-click minimization is off, and throttled enabled sampling to preserve Dock hover responsiveness.
+
 ## v1.1.21 - 2026-07-23
 
 - Added an optional Dock-click action with off, single-window-only, and all-window modes. It minimizes only an app that was already frontmost before the unmodified primary click, preserving native activation for background apps.

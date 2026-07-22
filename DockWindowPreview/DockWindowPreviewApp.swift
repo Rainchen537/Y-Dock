@@ -64,7 +64,11 @@ final class DockWindowPreviewApp: NSObject, NSApplicationDelegate {
     }()
 
     private lazy var mouseTracker: MouseTracker = {
-        let tracker = MouseTracker(dockInspector: dockInspector, settings: settings)
+        let tracker = MouseTracker(
+            dockInspector: dockInspector,
+            windowCollector: windowCollector,
+            settings: settings
+        )
         tracker.isPointInsidePreviewPanel = { [weak self] point in
             self?.previewPanel.containsScreenPoint(point) ?? false
         }
@@ -89,8 +93,8 @@ final class DockWindowPreviewApp: NSObject, NSApplicationDelegate {
         tracker.onDockContextMenuInteractionEnded = { [weak self] in
             self?.endDockContextMenuProtectionAfterMenuCloses()
         }
-        tracker.onDockPrimaryClick = { [weak self] item, wasFrontmost, _ in
-            self?.handleDockPrimaryClick(item, wasFrontmost: wasFrontmost)
+        tracker.onDockPrimaryClick = { [weak self] item, context in
+            self?.handleDockPrimaryClick(item, context: context)
         }
         return tracker
     }()
@@ -226,9 +230,13 @@ final class DockWindowPreviewApp: NSObject, NSApplicationDelegate {
         previewPanel.show(windows: windows, app: app, anchor: anchor, dockEdge: dockItem.dockEdge)
     }
 
-    private func handleDockPrimaryClick(_ dockItem: DockItem, wasFrontmost: Bool) {
+    private func handleDockPrimaryClick(
+        _ dockItem: DockItem,
+        context: DockPrimaryClickContext
+    ) {
         guard
-            wasFrontmost,
+            context.targetWasFrontmostBeforeClick,
+            context.targetOwnedTopmostUserWindowBeforeClick,
             settings.dockClickMinimizeMode != .off,
             let app = dockItem.runningApplication
         else {

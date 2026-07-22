@@ -1,16 +1,23 @@
 import AppKit
 import Foundation
 
+struct DockPrimaryClickContext {
+    let targetWasFrontmostBeforeClick: Bool
+    let targetOwnedTopmostUserWindowBeforeClick: Bool
+    let point: NSPoint
+}
+
 final class MouseTracker {
     var onHoverResolved: ((DockItem, NSPoint) -> Void)?
     var onDockHoverCandidateChanged: ((DockItem, Bool) -> Void)?
     var onMouseLeftDockAndPreview: (() -> Void)?
     var onDockContextMenuTrackingBegan: ((NSPoint) -> Void)?
     var onDockContextMenuInteractionEnded: (() -> Void)?
-    var onDockPrimaryClick: ((DockItem, Bool, NSPoint) -> Void)?
+    var onDockPrimaryClick: ((DockItem, DockPrimaryClickContext) -> Void)?
     var isPointInsidePreviewPanel: ((NSPoint) -> Bool)?
 
     private let dockInspector: DockInspector
+    private let windowCollector: WindowCollector
     private let settings: AppSettings
     private var globalMonitor: Any?
     private var localMonitor: Any?
@@ -24,6 +31,7 @@ final class MouseTracker {
     private var currentHoverPoint: NSPoint?
     private var lastObservedPoint: NSPoint?
     private var frontmostApplicationPIDAtLastPointerMove: pid_t?
+    private var topmostUserWindowOwnerPIDAtLastPointerMove: pid_t?
     private var lastPointerMoveAt: TimeInterval = 0
     private var currentFrontmostApplicationPID: pid_t?
     private var previousFrontmostApplicationPID: pid_t?
@@ -41,8 +49,13 @@ final class MouseTracker {
     private let hitTestRetryInterval: TimeInterval = 0.045
     private let maximumHitTestRetryDuration: TimeInterval = 0.55
 
-    init(dockInspector: DockInspector, settings: AppSettings = .shared) {
+    init(
+        dockInspector: DockInspector,
+        windowCollector: WindowCollector,
+        settings: AppSettings = .shared
+    ) {
         self.dockInspector = dockInspector
+        self.windowCollector = windowCollector
         self.settings = settings
     }
 
@@ -105,6 +118,7 @@ final class MouseTracker {
         cancelHitTestRetry()
         clearHoverCandidate(cancelRetry: false)
         frontmostApplicationPIDAtLastPointerMove = nil
+        topmostUserWindowOwnerPIDAtLastPointerMove = nil
         lastPointerMoveAt = 0
         currentFrontmostApplicationPID = nil
         previousFrontmostApplicationPID = nil
@@ -189,13 +203,14 @@ final class MouseTracker {
             let region = dockInspector.dockRegion(containing: point),
             region.frame.insetBy(dx: -6, dy: -6).contains(point),
             let item = dockInspector.applicationDockItem(at: point, in: region),
-            let app = item.runningApplication
+            let app = item.runningApplication,
+            settings.dockClickMinimizeMode != .off
         else {
             return
         }
 
         let targetPID = app.processIdentifier
-        let wasFrontmost = DockClickMinimizePolicy.targetWasFrontmostBeforeClick(
+        let targetWasFrontmost = DockClickMinimizePolicy.targetWasFrontmostBeforeClick(
             targetPID: targetPID,
             observedFrontmostPID: NSWorkspace.shared.frontmostApplication?.processIdentifier,
             trackedFrontmostPID: currentFrontmostApplicationPID,
@@ -204,7 +219,23 @@ final class MouseTracker {
             frontmostChangedAt: frontmostApplicationChangedAt,
             lastPointerMoveAt: lastPointerMoveAt
         )
-        onDockPrimaryClick?(item, wasFrontmost, point)
+        let targetOwnedTopmostUserWindow =
+            DockClickMinimizePolicy.targetOwnedTopmostUserWindowBeforeClick(
+                targetPID: targetPID,
+                observedTopmostUserWindowOwnerPID:
+                    windowCollector.topmostUserWindowOwnerPID(),
+                topmostUserWindowOwnerPIDAtLastPointerMove:
+                    topmostUserWindowOwnerPIDAtLastPointerMove
+            )
+        onDockPrimaryClick?(
+            item,
+            DockPrimaryClickContext(
+                targetWasFrontmostBeforeClick: targetWasFrontmost,
+                targetOwnedTopmostUserWindowBeforeClick:
+                    targetOwnedTopmostUserWindow,
+                point: point
+            )
+        )
     }
 
     @discardableResult
@@ -252,6 +283,11 @@ final class MouseTracker {
         lastPointerMoveAt = Date.timeIntervalSinceReferenceDate
         let region = dockInspector.dockRegion(containing: point)
         let isInsideDockFrame = region?.frame.contains(point) == true
+        let isInsideDockSnapshotRegion =
+            region?.frame.insetBy(dx: -6, dy: -6).contains(point) == true
+        if !isInsideDockSnapshotRegion || settings.dockClickMinimizeMode == .off {
+            topmostUserWindowOwnerPIDAtLastPointerMove = nil
+        }
         let isInsidePreviewProtection = isPointInsidePreviewPanel?(point) == true
 
         if !isInsideDockFrame, isInsidePreviewProtection {
@@ -269,6 +305,10 @@ final class MouseTracker {
 
         cancelTrailingMove()
         lastHandledAt = now
+        if isInsideDockSnapshotRegion, settings.dockClickMinimizeMode != .off {
+            topmostUserWindowOwnerPIDAtLastPointerMove =
+                windowCollector.topmostUserWindowOwnerPID()
+        }
         resolveMousePosition(
             point,
             region: region,

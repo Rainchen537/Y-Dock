@@ -46,6 +46,17 @@ enum PreviewCloseAction: Equatable {
     case quitApplication
 }
 
+struct DockClickWindowStackEntry {
+    let ownerPID: pid_t
+    let layer: Int
+    let isOnscreen: Bool
+    let alpha: Double
+    let bounds: CGRect
+    let isRegularApplication: Bool
+    let isExcludedOwner: Bool
+    let isLikelyUserWindow: Bool
+}
+
 enum DockClickMinimizePolicy {
     static func shouldMinimize(mode: DockClickMinimizeMode, totalWindowCount: Int) -> Bool {
         switch mode {
@@ -75,6 +86,37 @@ enum DockClickMinimizePolicy {
             && trackedFrontmostPID == targetPID
             && frontmostPIDAtLastPointerMove == targetPID
             && !targetWasActivatedAfterLastPointerMove
+    }
+
+    static func isEligibleTopmostUserWindow(
+        _ entry: DockClickWindowStackEntry
+    ) -> Bool {
+        entry.layer == 0
+            && entry.isOnscreen
+            && entry.alpha.isFinite
+            && entry.alpha > 0.01
+            && entry.bounds.width.isFinite
+            && entry.bounds.height.isFinite
+            && entry.bounds.width >= 40
+            && entry.bounds.height >= 40
+            && entry.isRegularApplication
+            && !entry.isExcludedOwner
+            && entry.isLikelyUserWindow
+    }
+
+    static func topmostUserWindowOwnerPID(
+        in entries: [DockClickWindowStackEntry]
+    ) -> pid_t? {
+        entries.first(where: isEligibleTopmostUserWindow)?.ownerPID
+    }
+
+    static func targetOwnedTopmostUserWindowBeforeClick(
+        targetPID: pid_t,
+        observedTopmostUserWindowOwnerPID: pid_t?,
+        topmostUserWindowOwnerPIDAtLastPointerMove: pid_t?
+    ) -> Bool {
+        observedTopmostUserWindowOwnerPID == targetPID
+            && topmostUserWindowOwnerPIDAtLastPointerMove == targetPID
     }
 }
 

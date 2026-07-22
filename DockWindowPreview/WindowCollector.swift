@@ -111,6 +111,69 @@ final class WindowCollector {
         return results
     }
 
+    func topmostUserWindowOwnerPID(
+        excludingProcessIdentifier excludedPID: pid_t = ProcessInfo.processInfo.processIdentifier
+    ) -> pid_t? {
+        let applicationsByPID = Dictionary(uniqueKeysWithValues:
+            NSWorkspace.shared.runningApplications.map { ($0.processIdentifier, $0) }
+        )
+        let options: CGWindowListOption = [.optionOnScreenOnly, .excludeDesktopElements]
+        guard
+            let rawWindows = CGWindowListCopyWindowInfo(
+                options,
+                kCGNullWindowID
+            ) as? [[String: Any]]
+        else {
+            DWLog("CGWindowListCopyWindowInfo returned no topmost-window list")
+            return nil
+        }
+
+        for dictionary in rawWindows {
+            guard
+                let ownerPID = dictionary[kCGWindowOwnerPID as String] as? pid_t,
+                ownerPID > 0,
+                let layer = dictionary[kCGWindowLayer as String] as? Int,
+                let boundsDictionary = dictionary[kCGWindowBounds as String] as? NSDictionary,
+                let bounds = CGRect(
+                    dictionaryRepresentation: boundsDictionary as CFDictionary
+                )
+            else {
+                continue
+            }
+
+            let title = (dictionary[kCGWindowName as String] as? String)?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            let ownerName = (dictionary[kCGWindowOwnerName as String] as? String) ?? ""
+            let isLikelyUserWindow = self.isLikelyUserWindow(
+                title: title,
+                ownerName: ownerName,
+                bounds: bounds
+            ) && !self.isLikelySystemBarWindow(
+                title: title,
+                bounds: bounds
+            )
+            let entry = DockClickWindowStackEntry(
+                ownerPID: ownerPID,
+                layer: layer,
+                isOnscreen:
+                    (dictionary[kCGWindowIsOnscreen as String] as? Bool) ?? false,
+                alpha:
+                    (dictionary[kCGWindowAlpha as String] as? Double) ?? 1,
+                bounds: bounds,
+                isRegularApplication:
+                    applicationsByPID[ownerPID]?.activationPolicy == .regular,
+                isExcludedOwner: ownerPID == excludedPID,
+                isLikelyUserWindow: isLikelyUserWindow
+            )
+
+            if DockClickMinimizePolicy.isEligibleTopmostUserWindow(entry) {
+                return ownerPID
+            }
+        }
+
+        return nil
+    }
+
     func switchableWindows(includeMinimized: Bool = true) -> [WindowInfo] {
         let currentPID = ProcessInfo.processInfo.processIdentifier
         let switchableApps = NSWorkspace.shared.runningApplications.filter { app in
@@ -322,6 +385,16 @@ final class WindowCollector {
         guard hasUsefulTitle else { return false }
         guard bounds.width >= 40, bounds.height >= 40 else { return false }
         return true
+    }
+
+    private func isLikelySystemBarWindow(title: String?, bounds: CGRect) -> Bool {
+        guard title?.isEmpty != false, bounds.height <= 80 else {
+            return false
+        }
+
+        return NSScreen.screens.contains { screen in
+            bounds.width >= screen.frame.width * 0.8
+        }
     }
 
     private func uniqueAXWindows(_ windows: [AXUIElement]) -> [AXUIElement] {

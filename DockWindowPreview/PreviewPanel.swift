@@ -625,10 +625,6 @@ private enum PreviewJoinedCardPosition {
 }
 
 private final class WindowPreviewCardView: NSView {
-    private enum TrackingAreaKind {
-        static let controlRegion = "controlRegion"
-    }
-
     var onClick: ((WindowInfo) -> Void)?
     var onClose: ((WindowInfo) -> Void)?
     var onMinimize: ((WindowInfo) -> Void)?
@@ -648,6 +644,7 @@ private final class WindowPreviewCardView: NSView {
     private let iconView = NSImageView()
     private let imageView = NSImageView()
     private let titleLabel = NSTextField(labelWithString: "")
+    private let controlRevealTrackingView = PreviewControlRegionTrackingView()
     private let controlMaskView = PreviewTitleMaskView()
     private let controlStack = NSStackView()
     private lazy var quitButton = PreviewControlButton(kind: .quitApp, target: self, action: #selector(quitApplicationButtonClicked))
@@ -731,21 +728,11 @@ private final class WindowPreviewCardView: NSView {
             owner: self,
             userInfo: nil
         ))
-        addTrackingArea(NSTrackingArea(
-            rect: controlRevealRect,
-            options: [.activeAlways, .mouseEnteredAndExited],
-            owner: self,
-            userInfo: [TrackingAreaKind.controlRegion: true]
-        ))
     }
 
     override func mouseEntered(with event: NSEvent) {
-        if isControlRegionEvent(event) {
-            isPointerInControlRegion = true
-        } else {
-            isHovered = true
-            applyCurrentAppearance()
-        }
+        isHovered = true
+        applyCurrentAppearance()
         updateControlVisibility()
         updateControlButtonHover(
             at: convert(event.locationInWindow, from: nil)
@@ -753,23 +740,15 @@ private final class WindowPreviewCardView: NSView {
     }
 
     override func mouseMoved(with event: NSEvent) {
-        let location = convert(event.locationInWindow, from: nil)
-        let isInsideControlRegion = controlRevealRect.contains(location)
-        if isPointerInControlRegion != isInsideControlRegion {
-            isPointerInControlRegion = isInsideControlRegion
-            updateControlVisibility()
-        }
-        updateControlButtonHover(at: location)
+        updateControlButtonHover(
+            at: convert(event.locationInWindow, from: nil)
+        )
     }
 
     override func mouseExited(with event: NSEvent) {
-        if isControlRegionEvent(event) {
-            isPointerInControlRegion = false
-        } else {
-            isHovered = false
-            isPointerInControlRegion = false
-            applyCurrentAppearance()
-        }
+        isHovered = false
+        isPointerInControlRegion = false
+        applyCurrentAppearance()
         updateControlVisibility()
         updateControlButtonHover(
             at: convert(event.locationInWindow, from: nil)
@@ -785,18 +764,17 @@ private final class WindowPreviewCardView: NSView {
         onClick?(windowInfo)
     }
 
-    private var controlRevealRect: NSRect {
-        let height = min(bounds.height, PreviewPanelLayout.controlMaskHeight + 4)
-        return NSRect(
-            x: 0,
-            y: max(0, bounds.maxY - height),
-            width: min(bounds.width, PreviewPanelLayout.controlMaskWidth + 4),
-            height: height
+    private func updateControlRegionTracking(
+        isInside: Bool,
+        event: NSEvent
+    ) {
+        if isPointerInControlRegion != isInside {
+            isPointerInControlRegion = isInside
+            updateControlVisibility()
+        }
+        updateControlButtonHover(
+            at: convert(event.locationInWindow, from: nil)
         )
-    }
-
-    private func isControlRegionEvent(_ event: NSEvent) -> Bool {
-        event.trackingArea?.userInfo?[TrackingAreaKind.controlRegion] as? Bool == true
     }
 
     private func updateControlVisibility() {
@@ -1004,6 +982,19 @@ private final class WindowPreviewCardView: NSView {
         imageView.heightAnchor.constraint(equalToConstant: thumbnailSize.height).isActive = true
         contentStack.addArrangedSubview(imageView)
 
+        controlRevealTrackingView.onPointerEvent = { [weak self] isInside, event in
+            self?.updateControlRegionTracking(
+                isInside: isInside,
+                event: event
+            )
+        }
+        controlRevealTrackingView.onMouseDown = { [weak self] in
+            guard let self else { return }
+            self.onClick?(self.windowInfo)
+        }
+        controlRevealTrackingView.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(controlRevealTrackingView)
+
         controlMaskView.alphaValue = 0
         controlMaskView.isHidden = true
         controlMaskView.translatesAutoresizingMaskIntoConstraints = false
@@ -1021,6 +1012,15 @@ private final class WindowPreviewCardView: NSView {
         addSubview(controlStack)
 
         NSLayoutConstraint.activate([
+            controlRevealTrackingView.leadingAnchor.constraint(equalTo: leadingAnchor),
+            controlRevealTrackingView.topAnchor.constraint(equalTo: topAnchor),
+            controlRevealTrackingView.widthAnchor.constraint(
+                equalToConstant: PreviewPanelLayout.controlMaskWidth + 4
+            ),
+            controlRevealTrackingView.heightAnchor.constraint(
+                equalToConstant: PreviewPanelLayout.controlMaskHeight + 4
+            ),
+
             controlMaskView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 2),
             controlMaskView.topAnchor.constraint(equalTo: topAnchor, constant: 2),
             controlMaskView.widthAnchor.constraint(equalToConstant: PreviewPanelLayout.controlMaskWidth),
@@ -1036,6 +1036,51 @@ private final class WindowPreviewCardView: NSView {
 private final class PreviewCardEffectView: NSVisualEffectView {
     override func hitTest(_ point: NSPoint) -> NSView? {
         nil
+    }
+}
+
+private final class PreviewControlRegionTrackingView: NSView {
+    var onPointerEvent: ((Bool, NSEvent) -> Void)?
+    var onMouseDown: (() -> Void)?
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        bounds.contains(point) ? self : nil
+    }
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+        true
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        trackingAreas.forEach(removeTrackingArea)
+        addTrackingArea(NSTrackingArea(
+            rect: bounds,
+            options: [
+                .activeAlways,
+                .mouseEnteredAndExited,
+                .mouseMoved,
+                .inVisibleRect
+            ],
+            owner: self,
+            userInfo: nil
+        ))
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        onPointerEvent?(true, event)
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        onPointerEvent?(true, event)
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        onPointerEvent?(false, event)
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        onMouseDown?()
     }
 }
 

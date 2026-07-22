@@ -12,6 +12,8 @@ private enum AppSettingsPolicyTests {
     static func main() {
         testDockClickMinimizeModes()
         testDockClickFrontmostSnapshot()
+        testDockClickTopmostWindowPolicy()
+        testDockClickTopmostWindowSnapshot()
         testPreviewClosePolicies()
         testIndependentListPersistence()
         testInvalidRawValuesFallBackSafely()
@@ -138,6 +140,122 @@ private enum AppSettingsPolicyTests {
                 "all frontmost snapshots must match the target"
             )
         }
+    }
+
+    private static func testDockClickTopmostWindowPolicy() {
+        let targetPID: pid_t = 100
+        let otherPID: pid_t = 200
+        let yDockPID: pid_t = 300
+
+        let ignoredEntries = [
+            DockClickWindowStackEntry(
+                ownerPID: yDockPID,
+                layer: 999,
+                isOnscreen: true,
+                alpha: 1,
+                bounds: CGRect(x: 0, y: 0, width: 500, height: 300),
+                isRegularApplication: false,
+                isExcludedOwner: true,
+                isLikelyUserWindow: true
+            ),
+            DockClickWindowStackEntry(
+                ownerPID: otherPID,
+                layer: 0,
+                isOnscreen: true,
+                alpha: 0,
+                bounds: CGRect(x: 0, y: 0, width: 500, height: 300),
+                isRegularApplication: true,
+                isExcludedOwner: false,
+                isLikelyUserWindow: true
+            ),
+            DockClickWindowStackEntry(
+                ownerPID: otherPID,
+                layer: 0,
+                isOnscreen: true,
+                alpha: 1,
+                bounds: CGRect(x: 0, y: 0, width: 500, height: 300),
+                isRegularApplication: false,
+                isExcludedOwner: false,
+                isLikelyUserWindow: true
+            )
+        ]
+        let targetEntry = DockClickWindowStackEntry(
+            ownerPID: targetPID,
+            layer: 0,
+            isOnscreen: true,
+            alpha: 1,
+            bounds: CGRect(x: 100, y: 100, width: 800, height: 600),
+            isRegularApplication: true,
+            isExcludedOwner: false,
+            isLikelyUserWindow: true
+        )
+        let otherEntry = DockClickWindowStackEntry(
+            ownerPID: otherPID,
+            layer: 0,
+            isOnscreen: true,
+            alpha: 1,
+            bounds: CGRect(x: 120, y: 120, width: 700, height: 500),
+            isRegularApplication: true,
+            isExcludedOwner: false,
+            isLikelyUserWindow: true
+        )
+
+        expect(
+            DockClickMinimizePolicy.topmostUserWindowOwnerPID(
+                in: ignoredEntries + [targetEntry]
+            ) == targetPID,
+            "Y-Dock, transparent, and non-regular windows must not cover the target"
+        )
+        expect(
+            DockClickMinimizePolicy.topmostUserWindowOwnerPID(
+                in: ignoredEntries + [otherEntry, targetEntry]
+            ) == otherPID,
+            "the first eligible ordinary user window must determine the topmost owner"
+        )
+        expect(
+            DockClickMinimizePolicy.topmostUserWindowOwnerPID(
+                in: ignoredEntries
+            ) == nil,
+            "a window stack without an eligible ordinary user window must return nil"
+        )
+    }
+
+    private static func testDockClickTopmostWindowSnapshot() {
+        let targetPID: pid_t = 100
+        let otherPID: pid_t = 200
+
+        expect(
+            DockClickMinimizePolicy.targetOwnedTopmostUserWindowBeforeClick(
+                targetPID: targetPID,
+                observedTopmostUserWindowOwnerPID: targetPID,
+                topmostUserWindowOwnerPIDAtLastPointerMove: targetPID
+            ),
+            "the target must be accepted when both topmost-window snapshots match"
+        )
+        expect(
+            !DockClickMinimizePolicy.targetOwnedTopmostUserWindowBeforeClick(
+                targetPID: targetPID,
+                observedTopmostUserWindowOwnerPID: otherPID,
+                topmostUserWindowOwnerPIDAtLastPointerMove: targetPID
+            ),
+            "a different currently topmost window owner must reject the Dock action"
+        )
+        expect(
+            !DockClickMinimizePolicy.targetOwnedTopmostUserWindowBeforeClick(
+                targetPID: targetPID,
+                observedTopmostUserWindowOwnerPID: targetPID,
+                topmostUserWindowOwnerPIDAtLastPointerMove: otherPID
+            ),
+            "a target activated after the last pointer move must not pass the topmost check"
+        )
+        expect(
+            !DockClickMinimizePolicy.targetOwnedTopmostUserWindowBeforeClick(
+                targetPID: targetPID,
+                observedTopmostUserWindowOwnerPID: nil,
+                topmostUserWindowOwnerPIDAtLastPointerMove: nil
+            ),
+            "missing topmost-window evidence must fail closed"
+        )
     }
 
     private static func testPreviewClosePolicies() {

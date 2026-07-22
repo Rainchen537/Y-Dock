@@ -13,7 +13,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Rainchen537/Y-Dock/releases/tag/v1.1.21">
+  <a href="https://github.com/Rainchen537/Y-Dock/releases/tag/v1.1.22">
     <img alt="Release" src="https://img.shields.io/github/v/release/Rainchen537/Y-Dock?style=for-the-badge&color=1f8fff">
   </a>
   <img alt="macOS" src="https://img.shields.io/badge/macOS-13%2B-111827?style=for-the-badge&logo=apple">
@@ -23,10 +23,10 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Rainchen537/Y-Dock/releases/download/v1.1.21/Y-Dock-v1.1.21-arm64.dmg">
+  <a href="https://github.com/Rainchen537/Y-Dock/releases/download/v1.1.22/Y-Dock-v1.1.22-arm64.dmg">
     <img alt="Download Apple Silicon DMG" src="https://img.shields.io/badge/Download-Apple%20Silicon-2563EB?style=for-the-badge&logo=apple">
   </a>
-  <a href="https://github.com/Rainchen537/Y-Dock/releases/download/v1.1.21/Y-Dock-v1.1.21-x86_64.dmg">
+  <a href="https://github.com/Rainchen537/Y-Dock/releases/download/v1.1.22/Y-Dock-v1.1.22-x86_64.dmg">
     <img alt="Download Intel DMG" src="https://img.shields.io/badge/Download-Intel-4B5563?style=for-the-badge&logo=apple">
   </a>
 </p>
@@ -42,7 +42,7 @@
 | 🪟 Dock 悬浮预览 | 鼠标停在 Dock 中某个 App 图标上，弹出该 App 的窗口预览面板。 |
 | 🧩 Dock 拼接式卡片 | Dock 悬浮预览去掉外层矩形容器，多窗口像 Windows 任务栏一样合并成一组。 |
 | ⚡ 快速切换窗口 | 点击任意缩略图，直接激活 App 并聚焦对应窗口。 |
-| 🖱️ Dock 点击最小化 | 可关闭，或仅在 App 只有一个窗口时最小化，也可一次最小化该 App 的全部窗口；仅对点击前已在前台的 App 生效，后台 App 点击仍保持系统原生激活行为。 |
+| 🖱️ Dock 点击最小化 | 可关闭，或仅在 App 只有一个窗口时最小化，也可一次最小化该 App 的全部窗口；仅当 App 在点击前已位于前台且其普通用户窗口处于当前窗口堆栈最上层时生效，后台 App 点击仍保持系统原生激活行为。 |
 | ⌥ Option+Tab 切换 | 按住 `Option` 后按 `Tab` 呼出亚克力窗口切换器，严格按最近聚焦顺序排列并默认选择第二张（仅一张时选择第一张）；hover 卡片时可从左上角半透明 X 直接关闭对应窗口，按 `Esc` 安全取消。 |
 | 🚀 异步缩略图 | 首屏先显示轻量卡片，缩略图后台补齐，减少热键和 Dock 横扫卡顿。 |
 | 💤 唤回最小化窗口 | 被最小化的窗口也会出现在预览里，点击后自动恢复并置前。 |
@@ -58,8 +58,8 @@
 ## 📦 安装
 
 1. 按 Mac 架构下载最新版 DMG：
-   - Apple Silicon（M 系列）：[Y-Dock-v1.1.21-arm64.dmg](https://github.com/Rainchen537/Y-Dock/releases/download/v1.1.21/Y-Dock-v1.1.21-arm64.dmg)
-   - Intel：[Y-Dock-v1.1.21-x86_64.dmg](https://github.com/Rainchen537/Y-Dock/releases/download/v1.1.21/Y-Dock-v1.1.21-x86_64.dmg)
+   - Apple Silicon（M 系列）：[Y-Dock-v1.1.22-arm64.dmg](https://github.com/Rainchen537/Y-Dock/releases/download/v1.1.22/Y-Dock-v1.1.22-arm64.dmg)
+   - Intel：[Y-Dock-v1.1.22-x86_64.dmg](https://github.com/Rainchen537/Y-Dock/releases/download/v1.1.22/Y-Dock-v1.1.22-x86_64.dmg)
 2. 打开对应架构的 DMG。
 3. 将 `Y-Dock.app` 拖到 `Applications`。
 4. 启动 `Y-Dock`，按提示开启权限。
@@ -98,7 +98,7 @@ System Settings
 3. 等待约 `100ms`，预览面板会自动弹出。
 4. 点击缩略图切换到对应窗口。
 5. hover 某张卡片，左上角可退出所属 App、关闭窗口或最小化窗口；如果开启隐藏式控制按钮，先将鼠标移入卡片左上区域。
-6. 可在设置中启用 Dock 点击最小化。目标 App 必须在点击前已经处于前台；点击后台 App 时只执行 macOS 原生激活，不会立即反向最小化。按住 `Control`、`Command`、`Option` 或 `Shift` 点击时也不会触发。
+6. 可在设置中启用 Dock 点击最小化。目标 App 必须在点击前已经处于前台，且该 App 的普通用户窗口必须位于当前窗口堆栈最上层；其他 App 的窗口挡在上方时不会触发。点击后台 App 时只执行 macOS 原生激活，不会立即反向最小化。按住 `Control`、`Command`、`Option` 或 `Shift` 点击时也不会触发。
 7. 也可以按住 `Option` 并按 `Tab` 打开窗口切换器；首次呼出默认选中 MRU 列表的第二张，只有一张窗口时回退到第一张，继续按 `Tab` 循环，松开 `Option` 后切到当前选中的窗口。hover 某张卡片时，其左上角 App icon 会覆盖为半透明 X，点击可关闭该窗口且不会误激活卡片；关闭后其余列表继续可用。按 `Esc` 会取消并吞掉对应按键事件，不影响底层窗口。
 
 ## ⚙️ 设置
