@@ -22,6 +22,9 @@ final class MouseTracker {
     private var globalMonitor: Any?
     private var localMonitor: Any?
     private var workspaceActivationObserver: NSObjectProtocol?
+    private var settingsObserver: NSObjectProtocol?
+    private var topmostSnapshotRefreshWorkItem: DispatchWorkItem?
+    private var preClickTopmostSnapshots: [DockClickTopmostSnapshot] = []
     private var hoverWorkItem: DispatchWorkItem?
     private var leaveWorkItem: DispatchWorkItem?
     private var trailingMoveWorkItem: DispatchWorkItem?
@@ -31,7 +34,8 @@ final class MouseTracker {
     private var currentHoverPoint: NSPoint?
     private var lastObservedPoint: NSPoint?
     private var frontmostApplicationPIDAtLastPointerMove: pid_t?
-    private var topmostUserWindowOwnerPIDAtLastPointerMove: pid_t?
+    private var lastTopmostUserWindowSnapshotAt: TimeInterval = 0
+    private var isInsideDockSnapshotRegionForTopmostSnapshot = false
     private var lastPointerMoveAt: TimeInterval = 0
     private var currentFrontmostApplicationPID: pid_t?
     private var previousFrontmostApplicationPID: pid_t?
@@ -48,6 +52,7 @@ final class MouseTracker {
     private let transientHitTestMissGrace: TimeInterval = 0.160
     private let hitTestRetryInterval: TimeInterval = 0.045
     private let maximumHitTestRetryDuration: TimeInterval = 0.55
+    private let topmostSnapshotRefreshInterval: TimeInterval = 0.08
 
     init(
         dockInspector: DockInspector,
@@ -81,7 +86,9 @@ final class MouseTracker {
             return event
         }
 
-        currentFrontmostApplicationPID = NSWorkspace.shared.frontmostApplication?.processIdentifier
+        currentFrontmostApplicationPID =
+            NSWorkspace.shared.frontmostApplication?.processIdentifier
+        frontmostApplicationChangedAt = Date.timeIntervalSinceReferenceDate
         workspaceActivationObserver = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didActivateApplicationNotification,
             object: nil,
@@ -95,6 +102,14 @@ final class MouseTracker {
             }
             self.recordFrontmostApplicationChange(to: app.processIdentifier)
         }
+        settingsObserver = NotificationCenter.default.addObserver(
+            forName: .appSettingsChanged,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.primeDockClickEvidenceAtCurrentLocation()
+        }
+        primeDockClickEvidenceAtCurrentLocation()
 
         DWLog("MouseTracker started")
     }
@@ -109,16 +124,22 @@ final class MouseTracker {
         if let workspaceActivationObserver {
             NSWorkspace.shared.notificationCenter.removeObserver(workspaceActivationObserver)
         }
+        if let settingsObserver {
+            NotificationCenter.default.removeObserver(settingsObserver)
+        }
         globalMonitor = nil
         localMonitor = nil
         workspaceActivationObserver = nil
+        settingsObserver = nil
+        resetPreClickTopmostSnapshots()
         cancelPendingHover()
         cancelPendingLeave()
         cancelTrailingMove()
         cancelHitTestRetry()
         clearHoverCandidate(cancelRetry: false)
         frontmostApplicationPIDAtLastPointerMove = nil
-        topmostUserWindowOwnerPIDAtLastPointerMove = nil
+        lastTopmostUserWindowSnapshotAt = 0
+        isInsideDockSnapshotRegionForTopmostSnapshot = false
         lastPointerMoveAt = 0
         currentFrontmostApplicationPID = nil
         previousFrontmostApplicationPID = nil
@@ -137,7 +158,10 @@ final class MouseTracker {
         case .otherMouseDown, .keyDown:
             onDockContextMenuInteractionEnded?()
         default:
-            handleMouseMove(at: NSEvent.mouseLocation)
+            handleMouseMove(
+                at: NSEvent.mouseLocation,
+                eventTimestamp: event.timestamp
+            )
         }
     }
 
@@ -145,11 +169,53 @@ final class MouseTracker {
         handleMouseMove(at: NSEvent.mouseLocation, forceHoverResolution: true)
     }
 
-    private func recordFrontmostApplicationChange(to processIdentifier: pid_t) {
-        guard processIdentifier != currentFrontmostApplicationPID else { return }
+    private func primeDockClickEvidenceAtCurrentLocation() {
+        guard Thread.isMainThread else {
+            DispatchQueue.main.async { [weak self] in
+                self?.primeDockClickEvidenceAtCurrentLocation()
+            }
+            return
+        }
+
+        guard settings.dockClickMinimizeMode != .off else {
+            resetPreClickTopmostSnapshots()
+            return
+        }
+
+        let now = Date.timeIntervalSinceReferenceDate
+        if let observedFrontmostPID =
+            NSWorkspace.shared.frontmostApplication?.processIdentifier,
+           observedFrontmostPID != currentFrontmostApplicationPID {
+            recordFrontmostApplicationChange(
+                to: observedFrontmostPID,
+                at: now
+            )
+        }
+
+        let point = NSEvent.mouseLocation
+        refreshTopmostSnapshotIfNeeded(
+            point: point,
+            region: dockInspector.dockRegion(containing: point),
+            now: now
+        )
+    }
+
+    private func recordFrontmostApplicationChange(
+        to processIdentifier: pid_t,
+        at changedAt: TimeInterval = Date.timeIntervalSinceReferenceDate
+    ) {
+        guard processIdentifier != currentFrontmostApplicationPID else {
+            return
+        }
         previousFrontmostApplicationPID = currentFrontmostApplicationPID
         currentFrontmostApplicationPID = processIdentifier
-        frontmostApplicationChangedAt = Date.timeIntervalSinceReferenceDate
+        frontmostApplicationChangedAt = changedAt
+        resetPreClickTopmostSnapshots()
+        scheduleTopmostSnapshotRefresh(
+            for: processIdentifier,
+            after:
+                DockClickMinimizePolicy.minimumStableFrontmostActivationDuration
+        )
     }
 
     private func handlePrimaryMouseDown(_ event: NSEvent) {
@@ -210,32 +276,148 @@ final class MouseTracker {
         }
 
         let targetPID = app.processIdentifier
-        let targetWasFrontmost = DockClickMinimizePolicy.targetWasFrontmostBeforeClick(
+        let clickAt = eventReferenceTime(forEventTimestamp: timestamp)
+        let frontmostDecision = DockClickMinimizePolicy.frontmostDecision(
             targetPID: targetPID,
-            observedFrontmostPID: NSWorkspace.shared.frontmostApplication?.processIdentifier,
+            observedFrontmostPID:
+                NSWorkspace.shared.frontmostApplication?.processIdentifier,
             trackedFrontmostPID: currentFrontmostApplicationPID,
             previousTrackedFrontmostPID: previousFrontmostApplicationPID,
-            frontmostPIDAtLastPointerMove: frontmostApplicationPIDAtLastPointerMove,
+            frontmostPIDAtLastPointerMove:
+                frontmostApplicationPIDAtLastPointerMove,
             frontmostChangedAt: frontmostApplicationChangedAt,
-            lastPointerMoveAt: lastPointerMoveAt
+            lastPointerMoveAt: lastPointerMoveAt,
+            clickAt: clickAt
         )
+        let preClickTopmostUserWindowOwnerPID: pid_t?
+        if frontmostDecision.acceptedStableActivationAfterPointerMove {
+            preClickTopmostUserWindowOwnerPID =
+                DockClickMinimizePolicy.stableTopmostSnapshotOwnerPID(
+                    targetPID: targetPID,
+                    snapshots: preClickTopmostSnapshots,
+                    frontmostChangedAt: frontmostApplicationChangedAt,
+                    clickAt: clickAt
+                )
+        } else {
+            preClickTopmostUserWindowOwnerPID =
+                DockClickMinimizePolicy.recentTopmostSnapshotOwnerPID(
+                    targetPID: targetPID,
+                    snapshots: preClickTopmostSnapshots,
+                    clickAt: clickAt
+                )
+        }
         let targetOwnedTopmostUserWindow =
             DockClickMinimizePolicy.targetOwnedTopmostUserWindowBeforeClick(
                 targetPID: targetPID,
                 observedTopmostUserWindowOwnerPID:
                     windowCollector.topmostUserWindowOwnerPID(),
-                topmostUserWindowOwnerPIDAtLastPointerMove:
-                    topmostUserWindowOwnerPIDAtLastPointerMove
+                preClickTopmostUserWindowOwnerPID:
+                    preClickTopmostUserWindowOwnerPID
             )
         onDockPrimaryClick?(
             item,
             DockPrimaryClickContext(
-                targetWasFrontmostBeforeClick: targetWasFrontmost,
+                targetWasFrontmostBeforeClick: frontmostDecision.isAccepted,
                 targetOwnedTopmostUserWindowBeforeClick:
                     targetOwnedTopmostUserWindow,
                 point: point
             )
         )
+    }
+
+    private func eventReferenceTime(
+        forEventTimestamp timestamp: TimeInterval
+    ) -> TimeInterval {
+        let now = Date.timeIntervalSinceReferenceDate
+        guard timestamp.isFinite, timestamp > 0 else { return now }
+
+        let eventAge = ProcessInfo.processInfo.systemUptime - timestamp
+        guard eventAge.isFinite, eventAge >= 0 else { return now }
+        return now - eventAge
+    }
+
+    private func scheduleTopmostSnapshotRefresh(
+        for processIdentifier: pid_t,
+        after delay: TimeInterval
+    ) {
+        topmostSnapshotRefreshWorkItem?.cancel()
+
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.topmostSnapshotRefreshWorkItem = nil
+            self.capturePeriodicTopmostSnapshot(
+                for: processIdentifier
+            )
+        }
+        topmostSnapshotRefreshWorkItem = workItem
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + max(0, delay),
+            execute: workItem
+        )
+    }
+
+    private func capturePeriodicTopmostSnapshot(
+        for processIdentifier: pid_t
+    ) {
+        let now = Date.timeIntervalSinceReferenceDate
+        guard
+            settings.dockClickMinimizeMode != .off,
+            currentFrontmostApplicationPID == processIdentifier,
+            NSWorkspace.shared.frontmostApplication?.processIdentifier ==
+                processIdentifier
+        else {
+            resetPreClickTopmostSnapshots()
+            return
+        }
+
+        let stableDuration = now - frontmostApplicationChangedAt
+        let remainingStableDuration =
+            DockClickMinimizePolicy.minimumStableFrontmostActivationDuration
+            - stableDuration
+        if remainingStableDuration > 0 {
+            scheduleTopmostSnapshotRefresh(
+                for: processIdentifier,
+                after: remainingStableDuration
+            )
+            return
+        }
+
+        let point = NSEvent.mouseLocation
+        guard
+            let region = dockInspector.dockRegion(containing: point),
+            region.frame.insetBy(dx: -6, dy: -6).contains(point)
+        else {
+            resetPreClickTopmostSnapshots()
+            return
+        }
+
+        captureTopmostSnapshot(at: now)
+        scheduleTopmostSnapshotRefresh(
+            for: processIdentifier,
+            after: topmostSnapshotRefreshInterval
+        )
+    }
+
+    private func captureTopmostSnapshot(at capturedAt: TimeInterval) {
+        preClickTopmostSnapshots.append(
+            DockClickTopmostSnapshot(
+                ownerPID: windowCollector.topmostUserWindowOwnerPID(),
+                capturedAt: capturedAt
+            )
+        )
+        let oldestAllowedCapture = capturedAt
+            - DockClickMinimizePolicy.maximumPreClickTopmostSnapshotAge
+        preClickTopmostSnapshots.removeAll {
+            $0.capturedAt < oldestAllowedCapture
+        }
+    }
+
+    private func resetPreClickTopmostSnapshots() {
+        topmostSnapshotRefreshWorkItem?.cancel()
+        topmostSnapshotRefreshWorkItem = nil
+        preClickTopmostSnapshots.removeAll(keepingCapacity: true)
+        lastTopmostUserWindowSnapshotAt = 0
+        isInsideDockSnapshotRegionForTopmostSnapshot = false
     }
 
     @discardableResult
@@ -260,6 +442,7 @@ final class MouseTracker {
 
     private func handleMouseMove(
         at point: NSPoint,
+        eventTimestamp: TimeInterval? = nil,
         forceHoverResolution: Bool = false,
         bypassThrottle: Bool = false
     ) {
@@ -267,6 +450,7 @@ final class MouseTracker {
             DispatchQueue.main.async { [weak self] in
                 self?.handleMouseMove(
                     at: point,
+                    eventTimestamp: eventTimestamp,
                     forceHoverResolution: forceHoverResolution,
                     bypassThrottle: bypassThrottle
                 )
@@ -275,20 +459,33 @@ final class MouseTracker {
         }
 
         lastObservedPoint = point
-        let observedFrontmostPID = NSWorkspace.shared.frontmostApplication?.processIdentifier
-        if let observedFrontmostPID, observedFrontmostPID != currentFrontmostApplicationPID {
-            recordFrontmostApplicationChange(to: observedFrontmostPID)
+        let now = Date.timeIntervalSinceReferenceDate
+        if let eventTimestamp {
+            let pointerMoveAt = eventReferenceTime(
+                forEventTimestamp: eventTimestamp
+            )
+            let observedFrontmostPID =
+                NSWorkspace.shared.frontmostApplication?.processIdentifier
+            if let observedFrontmostPID,
+               observedFrontmostPID != currentFrontmostApplicationPID {
+                recordFrontmostApplicationChange(
+                    to: observedFrontmostPID,
+                    at: now
+                )
+            }
+            frontmostApplicationPIDAtLastPointerMove =
+                currentFrontmostApplicationPID ?? observedFrontmostPID
+            lastPointerMoveAt = pointerMoveAt
         }
-        frontmostApplicationPIDAtLastPointerMove = currentFrontmostApplicationPID ?? observedFrontmostPID
-        lastPointerMoveAt = Date.timeIntervalSinceReferenceDate
         let region = dockInspector.dockRegion(containing: point)
         let isInsideDockFrame = region?.frame.contains(point) == true
-        let isInsideDockSnapshotRegion =
-            region?.frame.insetBy(dx: -6, dy: -6).contains(point) == true
-        if !isInsideDockSnapshotRegion || settings.dockClickMinimizeMode == .off {
-            topmostUserWindowOwnerPIDAtLastPointerMove = nil
-        }
-        let isInsidePreviewProtection = isPointInsidePreviewPanel?(point) == true
+        refreshTopmostSnapshotIfNeeded(
+            point: point,
+            region: region,
+            now: now
+        )
+        let isInsidePreviewProtection =
+            isPointInsidePreviewPanel?(point) == true
 
         if !isInsideDockFrame, isInsidePreviewProtection {
             cancelPendingLeave()
@@ -297,18 +494,17 @@ final class MouseTracker {
             return
         }
 
-        let now = Date.timeIntervalSinceReferenceDate
-        if !forceHoverResolution, !bypassThrottle, now - lastHandledAt < throttleInterval {
-            scheduleTrailingMove(after: throttleInterval - (now - lastHandledAt))
+        if !forceHoverResolution,
+           !bypassThrottle,
+           now - lastHandledAt < throttleInterval {
+            scheduleTrailingMove(
+                after: throttleInterval - (now - lastHandledAt)
+            )
             return
         }
 
         cancelTrailingMove()
         lastHandledAt = now
-        if isInsideDockSnapshotRegion, settings.dockClickMinimizeMode != .off {
-            topmostUserWindowOwnerPIDAtLastPointerMove =
-                windowCollector.topmostUserWindowOwnerPID()
-        }
         resolveMousePosition(
             point,
             region: region,
@@ -316,6 +512,44 @@ final class MouseTracker {
             forceHoverResolution: forceHoverResolution,
             now: now
         )
+    }
+
+    private func refreshTopmostSnapshotIfNeeded(
+        point: NSPoint,
+        region: DockRegion?,
+        now: TimeInterval
+    ) {
+        let isEnabled = settings.dockClickMinimizeMode != .off
+        let isInsideSnapshotRegion =
+            region?.frame.insetBy(dx: -6, dy: -6).contains(point) == true
+        let shouldRefresh =
+            DockClickMinimizePolicy.shouldRefreshTopmostSnapshot(
+                isEnabled: isEnabled,
+                isInsideSnapshotRegion: isInsideSnapshotRegion,
+                wasInsideSnapshotRegion:
+                    isInsideDockSnapshotRegionForTopmostSnapshot,
+                now: now,
+                lastSnapshotAt: lastTopmostUserWindowSnapshotAt,
+                minimumInterval: throttleInterval
+            )
+
+        guard isEnabled, isInsideSnapshotRegion else {
+            resetPreClickTopmostSnapshots()
+            return
+        }
+
+        isInsideDockSnapshotRegionForTopmostSnapshot = true
+        guard shouldRefresh else { return }
+
+        captureTopmostSnapshot(at: now)
+        lastTopmostUserWindowSnapshotAt = now
+        if let processIdentifier = currentFrontmostApplicationPID
+            ?? NSWorkspace.shared.frontmostApplication?.processIdentifier {
+            scheduleTopmostSnapshotRefresh(
+                for: processIdentifier,
+                after: topmostSnapshotRefreshInterval
+            )
+        }
     }
 
     private func resolveMousePosition(

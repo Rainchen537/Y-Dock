@@ -11,13 +11,15 @@ private enum AppSettingsPolicyTests {
 
     static func main() {
         testDockClickMinimizeModes()
-        testDockClickFrontmostSnapshot()
+        testDockClickFrontmostEvidence()
+        testDockClickSnapshotRefreshPolicy()
         testDockClickTopmostWindowPolicy()
-        testDockClickTopmostWindowSnapshot()
-        testPreviewClosePolicies()
+        testDockClickTimestampedSnapshots()
+        testDesktopClosePolicies()
         testIndependentListPersistence()
+        testLegacyDesktopSettingsMigration()
         testInvalidRawValuesFallBackSafely()
-        testControlHoverSizeClamp()
+        testTrafficLightHoverSizeClamp()
 
         guard failureCount == 0 else {
             fputs("\(failureCount) AppSettings/policy test(s) failed.\n", stderr)
@@ -28,118 +30,154 @@ private enum AppSettingsPolicyTests {
 
     private static func testDockClickMinimizeModes() {
         expect(
-            !DockClickMinimizePolicy.shouldMinimize(mode: .off, totalWindowCount: 1),
+            !DockClickMinimizePolicy.shouldMinimize(
+                mode: .off,
+                totalWindowCount: 1
+            ),
             "off mode must never minimize"
         )
         expect(
-            DockClickMinimizePolicy.shouldMinimize(mode: .onlySingleWindow, totalWindowCount: 1),
+            DockClickMinimizePolicy.shouldMinimize(
+                mode: .onlySingleWindow,
+                totalWindowCount: 1
+            ),
             "onlySingleWindow must minimize exactly one user window"
         )
         expect(
-            !DockClickMinimizePolicy.shouldMinimize(mode: .onlySingleWindow, totalWindowCount: 0),
+            !DockClickMinimizePolicy.shouldMinimize(
+                mode: .onlySingleWindow,
+                totalWindowCount: 0
+            ),
             "onlySingleWindow must reject zero windows"
         )
         expect(
-            !DockClickMinimizePolicy.shouldMinimize(mode: .onlySingleWindow, totalWindowCount: 2),
+            !DockClickMinimizePolicy.shouldMinimize(
+                mode: .onlySingleWindow,
+                totalWindowCount: 2
+            ),
             "onlySingleWindow must reject multiple windows"
         )
         expect(
-            DockClickMinimizePolicy.shouldMinimize(mode: .allWindows, totalWindowCount: 3),
+            DockClickMinimizePolicy.shouldMinimize(
+                mode: .allWindows,
+                totalWindowCount: 3
+            ),
             "allWindows must accept one or more windows"
-        )
-        expect(
-            !DockClickMinimizePolicy.shouldMinimize(mode: .allWindows, totalWindowCount: 0),
-            "allWindows must reject an empty window list"
         )
     }
 
-    private static func testDockClickFrontmostSnapshot() {
+    private static func testDockClickFrontmostEvidence() {
         let targetPID: pid_t = 100
         let otherPID: pid_t = 200
 
-        expect(
-            DockClickMinimizePolicy.targetWasFrontmostBeforeClick(
-                targetPID: targetPID,
-                observedFrontmostPID: targetPID,
-                trackedFrontmostPID: targetPID,
-                previousTrackedFrontmostPID: otherPID,
-                frontmostPIDAtLastPointerMove: targetPID,
-                frontmostChangedAt: 10,
-                lastPointerMoveAt: 11
-            ),
-            "a target that remained frontmost through the last pointer move must be accepted"
+        let direct = DockClickMinimizePolicy.frontmostDecision(
+            targetPID: targetPID,
+            observedFrontmostPID: targetPID,
+            trackedFrontmostPID: targetPID,
+            previousTrackedFrontmostPID: otherPID,
+            frontmostPIDAtLastPointerMove: targetPID,
+            frontmostChangedAt: 10,
+            lastPointerMoveAt: 11,
+            clickAt: 11.1
         )
+        expect(direct.isAccepted, "matching pointer evidence must be accepted")
         expect(
-            !DockClickMinimizePolicy.targetWasFrontmostBeforeClick(
-                targetPID: targetPID,
-                observedFrontmostPID: otherPID,
-                trackedFrontmostPID: otherPID,
-                previousTrackedFrontmostPID: targetPID,
-                frontmostPIDAtLastPointerMove: targetPID,
-                frontmostChangedAt: 12,
-                lastPointerMoveAt: 11
-            ),
-            "a background target must be rejected before Dock activates it"
-        )
-        expect(
-            !DockClickMinimizePolicy.targetWasFrontmostBeforeClick(
-                targetPID: targetPID,
-                observedFrontmostPID: targetPID,
-                trackedFrontmostPID: otherPID,
-                previousTrackedFrontmostPID: targetPID,
-                frontmostPIDAtLastPointerMove: targetPID,
-                frontmostChangedAt: 12,
-                lastPointerMoveAt: 11
-            ),
-            "an in-flight Dock activation must be rejected before the workspace notification arrives"
-        )
-        expect(
-            !DockClickMinimizePolicy.targetWasFrontmostBeforeClick(
-                targetPID: targetPID,
-                observedFrontmostPID: targetPID,
-                trackedFrontmostPID: targetPID,
-                previousTrackedFrontmostPID: otherPID,
-                frontmostPIDAtLastPointerMove: targetPID,
-                frontmostChangedAt: 12,
-                lastPointerMoveAt: 11
-            ),
-            "a target activated after the last pointer move must be rejected"
-        )
-        expect(
-            DockClickMinimizePolicy.targetWasFrontmostBeforeClick(
-                targetPID: targetPID,
-                observedFrontmostPID: targetPID,
-                trackedFrontmostPID: targetPID,
-                previousTrackedFrontmostPID: otherPID,
-                frontmostPIDAtLastPointerMove: targetPID,
-                frontmostChangedAt: 12,
-                lastPointerMoveAt: 13
-            ),
-            "a new pointer move after activation must refresh the frontmost snapshot"
+            !direct.acceptedStableActivationAfterPointerMove,
+            "matching pointer evidence must use the direct path"
         )
 
-        let mismatchedSnapshots: [(pid_t?, pid_t?, pid_t?)] = [
-            (otherPID, targetPID, targetPID),
-            (targetPID, otherPID, targetPID),
-            (targetPID, targetPID, otherPID),
-            (nil, targetPID, targetPID),
-            (targetPID, nil, targetPID),
-            (targetPID, targetPID, nil)
-        ]
-        for (observedPID, trackedPID, pointerMovePID) in mismatchedSnapshots {
-            expect(
-                !DockClickMinimizePolicy.targetWasFrontmostBeforeClick(
-                    targetPID: targetPID,
-                    observedFrontmostPID: observedPID,
-                    trackedFrontmostPID: trackedPID,
-                    previousTrackedFrontmostPID: targetPID,
-                    frontmostPIDAtLastPointerMove: pointerMovePID,
-                    frontmostChangedAt: 10,
-                    lastPointerMoveAt: 11
-                ),
-                "all frontmost snapshots must match the target"
-            )
-        }
+        let background = DockClickMinimizePolicy.frontmostDecision(
+            targetPID: targetPID,
+            observedFrontmostPID: otherPID,
+            trackedFrontmostPID: otherPID,
+            previousTrackedFrontmostPID: targetPID,
+            frontmostPIDAtLastPointerMove: targetPID,
+            frontmostChangedAt: 12,
+            lastPointerMoveAt: 11,
+            clickAt: 12.3
+        )
+        expect(!background.isAccepted, "a background target must be rejected")
+
+        let unstableActivation = DockClickMinimizePolicy.frontmostDecision(
+            targetPID: targetPID,
+            observedFrontmostPID: targetPID,
+            trackedFrontmostPID: targetPID,
+            previousTrackedFrontmostPID: otherPID,
+            frontmostPIDAtLastPointerMove: otherPID,
+            frontmostChangedAt: 12,
+            lastPointerMoveAt: 11.9,
+            clickAt: 12.1
+        )
+        expect(
+            !unstableActivation.isAccepted,
+            "a recent activation after the last pointer move must be rejected"
+        )
+
+        let stableActivation = DockClickMinimizePolicy.frontmostDecision(
+            targetPID: targetPID,
+            observedFrontmostPID: targetPID,
+            trackedFrontmostPID: targetPID,
+            previousTrackedFrontmostPID: otherPID,
+            frontmostPIDAtLastPointerMove: otherPID,
+            frontmostChangedAt: 12,
+            lastPointerMoveAt: 11.7,
+            clickAt: 12.2
+        )
+        expect(
+            stableActivation.isAccepted,
+            "a stable activation may use fresh post-activation window snapshots"
+        )
+        expect(
+            stableActivation.acceptedStableActivationAfterPointerMove,
+            "stable post-move activation must be marked for stricter snapshot filtering"
+        )
+    }
+
+    private static func testDockClickSnapshotRefreshPolicy() {
+        expect(
+            DockClickMinimizePolicy.shouldRefreshTopmostSnapshot(
+                isEnabled: true,
+                isInsideSnapshotRegion: true,
+                wasInsideSnapshotRegion: false,
+                now: 10,
+                lastSnapshotAt: 9.99,
+                minimumInterval: 0.08
+            ),
+            "entering the Dock region must capture immediately"
+        )
+        expect(
+            !DockClickMinimizePolicy.shouldRefreshTopmostSnapshot(
+                isEnabled: true,
+                isInsideSnapshotRegion: true,
+                wasInsideSnapshotRegion: true,
+                now: 10,
+                lastSnapshotAt: 9.95,
+                minimumInterval: 0.08
+            ),
+            "a recent snapshot must not be refreshed too early"
+        )
+        expect(
+            DockClickMinimizePolicy.shouldRefreshTopmostSnapshot(
+                isEnabled: true,
+                isInsideSnapshotRegion: true,
+                wasInsideSnapshotRegion: true,
+                now: 10.04,
+                lastSnapshotAt: 9.95,
+                minimumInterval: 0.08
+            ),
+            "a stale snapshot must refresh while the pointer remains over Dock"
+        )
+        expect(
+            !DockClickMinimizePolicy.shouldRefreshTopmostSnapshot(
+                isEnabled: false,
+                isInsideSnapshotRegion: true,
+                wasInsideSnapshotRegion: false,
+                now: 10,
+                lastSnapshotAt: 0,
+                minimumInterval: 0.08
+            ),
+            "disabled Dock minimization must not collect snapshots"
+        )
     }
 
     private static func testDockClickTopmostWindowPolicy() {
@@ -165,16 +203,6 @@ private enum AppSettingsPolicyTests {
                 alpha: 0,
                 bounds: CGRect(x: 0, y: 0, width: 500, height: 300),
                 isRegularApplication: true,
-                isExcludedOwner: false,
-                isLikelyUserWindow: true
-            ),
-            DockClickWindowStackEntry(
-                ownerPID: otherPID,
-                layer: 0,
-                isOnscreen: true,
-                alpha: 1,
-                bounds: CGRect(x: 0, y: 0, width: 500, height: 300),
-                isRegularApplication: false,
                 isExcludedOwner: false,
                 isLikelyUserWindow: true
             )
@@ -204,66 +232,89 @@ private enum AppSettingsPolicyTests {
             DockClickMinimizePolicy.topmostUserWindowOwnerPID(
                 in: ignoredEntries + [targetEntry]
             ) == targetPID,
-            "Y-Dock, transparent, and non-regular windows must not cover the target"
+            "excluded and transparent windows must not cover the target"
         )
         expect(
             DockClickMinimizePolicy.topmostUserWindowOwnerPID(
                 in: ignoredEntries + [otherEntry, targetEntry]
             ) == otherPID,
-            "the first eligible ordinary user window must determine the topmost owner"
-        )
-        expect(
-            DockClickMinimizePolicy.topmostUserWindowOwnerPID(
-                in: ignoredEntries
-            ) == nil,
-            "a window stack without an eligible ordinary user window must return nil"
+            "the first eligible ordinary window must determine the topmost owner"
         )
     }
 
-    private static func testDockClickTopmostWindowSnapshot() {
+    private static func testDockClickTimestampedSnapshots() {
         let targetPID: pid_t = 100
         let otherPID: pid_t = 200
+        let snapshots = [
+            DockClickTopmostSnapshot(ownerPID: targetPID, capturedAt: 10.00),
+            DockClickTopmostSnapshot(ownerPID: otherPID, capturedAt: 10.12),
+            DockClickTopmostSnapshot(ownerPID: targetPID, capturedAt: 10.30)
+        ]
 
+        expect(
+            DockClickMinimizePolicy.recentTopmostSnapshotOwnerPID(
+                targetPID: targetPID,
+                snapshots: snapshots,
+                clickAt: 10.35
+            ) == targetPID,
+            "the newest fresh target snapshot must be accepted"
+        )
+        expect(
+            DockClickMinimizePolicy.recentTopmostSnapshotOwnerPID(
+                targetPID: targetPID,
+                snapshots: snapshots,
+                clickAt: 10.60
+            ) == nil,
+            "a snapshot older than the maximum age must be rejected"
+        )
+        expect(
+            DockClickMinimizePolicy.stableTopmostSnapshotOwnerPID(
+                targetPID: targetPID,
+                snapshots: snapshots,
+                frontmostChangedAt: 10.15,
+                clickAt: 10.35,
+                minimumStableActivationDuration: 0.18
+            ) == nil,
+            "stable activation evidence must be captured after the stability threshold"
+        )
+
+        let stableSnapshots = snapshots + [
+            DockClickTopmostSnapshot(ownerPID: targetPID, capturedAt: 10.34)
+        ]
+        expect(
+            DockClickMinimizePolicy.stableTopmostSnapshotOwnerPID(
+                targetPID: targetPID,
+                snapshots: stableSnapshots,
+                frontmostChangedAt: 10.15,
+                clickAt: 10.35,
+                minimumStableActivationDuration: 0.18
+            ) == targetPID,
+            "a fresh post-threshold target snapshot must be accepted"
+        )
         expect(
             DockClickMinimizePolicy.targetOwnedTopmostUserWindowBeforeClick(
                 targetPID: targetPID,
                 observedTopmostUserWindowOwnerPID: targetPID,
-                topmostUserWindowOwnerPIDAtLastPointerMove: targetPID
+                preClickTopmostUserWindowOwnerPID: targetPID
             ),
-            "the target must be accepted when both topmost-window snapshots match"
+            "current and pre-click topmost evidence must both match"
         )
         expect(
             !DockClickMinimizePolicy.targetOwnedTopmostUserWindowBeforeClick(
                 targetPID: targetPID,
                 observedTopmostUserWindowOwnerPID: otherPID,
-                topmostUserWindowOwnerPIDAtLastPointerMove: targetPID
+                preClickTopmostUserWindowOwnerPID: targetPID
             ),
-            "a different currently topmost window owner must reject the Dock action"
-        )
-        expect(
-            !DockClickMinimizePolicy.targetOwnedTopmostUserWindowBeforeClick(
-                targetPID: targetPID,
-                observedTopmostUserWindowOwnerPID: targetPID,
-                topmostUserWindowOwnerPIDAtLastPointerMove: otherPID
-            ),
-            "a target activated after the last pointer move must not pass the topmost check"
-        )
-        expect(
-            !DockClickMinimizePolicy.targetOwnedTopmostUserWindowBeforeClick(
-                targetPID: targetPID,
-                observedTopmostUserWindowOwnerPID: nil,
-                topmostUserWindowOwnerPIDAtLastPointerMove: nil
-            ),
-            "missing topmost-window evidence must fail closed"
+            "a covering ordinary window must reject minimization"
         )
     }
 
-    private static func testPreviewClosePolicies() {
+    private static func testDesktopClosePolicies() {
         let blacklist: Set<String> = ["com.example.blocked"]
         let whitelist: Set<String> = ["com.example.allowed"]
 
         expect(
-            PreviewCloseActionPolicy.action(
+            DesktopCloseActionPolicy.action(
                 isEnabled: false,
                 mode: .all,
                 bundleIdentifier: "com.example.app",
@@ -274,7 +325,7 @@ private enum AppSettingsPolicyTests {
             "disabled quit policy must close the window"
         )
         expect(
-            PreviewCloseActionPolicy.action(
+            DesktopCloseActionPolicy.action(
                 isEnabled: true,
                 mode: .all,
                 bundleIdentifier: nil,
@@ -282,10 +333,10 @@ private enum AppSettingsPolicyTests {
                 blacklist: blacklist,
                 whitelist: whitelist
             ) == .quitApplication,
-            "all mode may quit a known running app even without a bundle ID"
+            "all mode may quit a known running app without a bundle ID"
         )
         expect(
-            PreviewCloseActionPolicy.action(
+            DesktopCloseActionPolicy.action(
                 isEnabled: true,
                 mode: .blacklist,
                 bundleIdentifier: "com.example.blocked",
@@ -293,10 +344,10 @@ private enum AppSettingsPolicyTests {
                 blacklist: blacklist,
                 whitelist: whitelist
             ) == .closeWindow,
-            "blacklisted apps must keep close-window behavior"
+            "blacklisted apps must retain close-window behavior"
         )
         expect(
-            PreviewCloseActionPolicy.action(
+            DesktopCloseActionPolicy.action(
                 isEnabled: true,
                 mode: .blacklist,
                 bundleIdentifier: "com.example.other",
@@ -307,7 +358,7 @@ private enum AppSettingsPolicyTests {
             "apps outside the blacklist must request quit"
         )
         expect(
-            PreviewCloseActionPolicy.action(
+            DesktopCloseActionPolicy.action(
                 isEnabled: true,
                 mode: .whitelist,
                 bundleIdentifier: "com.example.allowed",
@@ -318,7 +369,7 @@ private enum AppSettingsPolicyTests {
             "whitelisted apps must request quit"
         )
         expect(
-            PreviewCloseActionPolicy.action(
+            DesktopCloseActionPolicy.action(
                 isEnabled: true,
                 mode: .whitelist,
                 bundleIdentifier: "com.example.other",
@@ -328,49 +379,91 @@ private enum AppSettingsPolicyTests {
             ) == .closeWindow,
             "apps outside the whitelist must close the window"
         )
-        for mode in [PreviewCloseQuitMode.blacklist, .whitelist] {
-            expect(
-                PreviewCloseActionPolicy.action(
-                    isEnabled: true,
-                    mode: mode,
-                    bundleIdentifier: nil,
-                    hasRunningApplication: true,
-                    blacklist: blacklist,
-                    whitelist: whitelist
-                ) == .closeWindow,
-                "list modes must conservatively close when bundle ID is missing"
-            )
-        }
         expect(
-            PreviewCloseActionPolicy.action(
+            DesktopCloseActionPolicy.action(
                 isEnabled: true,
-                mode: .all,
-                bundleIdentifier: "com.example.app",
-                hasRunningApplication: false,
+                mode: .whitelist,
+                bundleIdentifier: nil,
+                hasRunningApplication: true,
                 blacklist: blacklist,
                 whitelist: whitelist
             ) == .closeWindow,
-            "quit policy must close when the running app cannot be obtained"
+            "list modes must fail closed when the bundle ID is missing"
         )
     }
 
     private static func testIndependentListPersistence() {
         withDefaults { defaults in
             let settings = AppSettings(defaults: defaults)
-            settings.previewCloseQuitBlacklist = ["com.example.black.one", "com.example.black.two"]
-            settings.previewCloseQuitWhitelist = ["com.example.white"]
-            settings.previewCloseQuitMode = .blacklist
-            settings.previewCloseQuitMode = .whitelist
-            settings.previewCloseQuitsApplicationEnabled = false
+            settings.desktopCloseQuitBlacklist = [
+                "com.example.black.one",
+                "com.example.black.two"
+            ]
+            settings.desktopCloseQuitWhitelist = ["com.example.white"]
+            settings.desktopCloseQuitMode = .blacklist
+            settings.desktopCloseQuitMode = .whitelist
+            settings.desktopCloseQuitsApplicationEnabled = false
 
             let reloaded = AppSettings(defaults: defaults)
             expect(
-                reloaded.previewCloseQuitBlacklist == ["com.example.black.one", "com.example.black.two"],
-                "blacklist must persist independently"
+                reloaded.desktopCloseQuitBlacklist == [
+                    "com.example.black.one",
+                    "com.example.black.two"
+                ],
+                "desktop blacklist must persist independently"
             )
             expect(
-                reloaded.previewCloseQuitWhitelist == ["com.example.white"],
-                "whitelist must persist independently"
+                reloaded.desktopCloseQuitWhitelist == ["com.example.white"],
+                "desktop whitelist must persist independently"
+            )
+        }
+    }
+
+    private static func testLegacyDesktopSettingsMigration() {
+        withDefaults { defaults in
+            defaults.set(1, forKey: "defaultsRevision")
+            defaults.set(true, forKey: "previewControlHoverEnlargementEnabled")
+            defaults.set(27.0, forKey: "previewControlHoverTargetSize")
+            defaults.set(true, forKey: "previewControlsRevealOnControlAreaOnly")
+            defaults.set(true, forKey: "previewCloseQuitsApplicationEnabled")
+            defaults.set("whitelist", forKey: "previewCloseQuitMode")
+            defaults.set(
+                ["com.example.black"],
+                forKey: "previewCloseQuitBlacklist"
+            )
+            defaults.set(
+                ["com.example.white"],
+                forKey: "previewCloseQuitWhitelist"
+            )
+
+            let settings = AppSettings(defaults: defaults)
+            expect(
+                settings.desktopTrafficLightHoverEnlargementEnabled,
+                "legacy hover enlargement must migrate to desktop controls"
+            )
+            expect(
+                settings.desktopTrafficLightHoverTargetSize == 27,
+                "legacy hover size must migrate to desktop controls"
+            )
+            expect(
+                settings.desktopTrafficLightsRevealOnHover,
+                "legacy reveal mode must migrate to desktop controls"
+            )
+            expect(
+                settings.desktopCloseQuitsApplicationEnabled,
+                "legacy close policy enablement must migrate"
+            )
+            expect(
+                settings.desktopCloseQuitMode == .whitelist,
+                "legacy close policy mode must migrate"
+            )
+            expect(
+                settings.desktopCloseQuitBlacklist == ["com.example.black"],
+                "legacy blacklist must migrate"
+            )
+            expect(
+                settings.desktopCloseQuitWhitelist == ["com.example.white"],
+                "legacy whitelist must migrate"
             )
         }
     }
@@ -378,33 +471,45 @@ private enum AppSettingsPolicyTests {
     private static func testInvalidRawValuesFallBackSafely() {
         withDefaults { defaults in
             defaults.set("not-a-mode", forKey: "dockClickMinimizeMode")
-            defaults.set("not-a-mode", forKey: "previewCloseQuitMode")
+            defaults.set("not-a-mode", forKey: "desktopCloseQuitMode")
             let settings = AppSettings(defaults: defaults)
 
-            expect(settings.dockClickMinimizeMode == .off, "invalid Dock mode must fall back to off")
-            expect(settings.previewCloseQuitMode == .all, "invalid close policy mode must fall back to all")
+            expect(
+                settings.dockClickMinimizeMode == .off,
+                "invalid Dock mode must fall back to off"
+            )
+            expect(
+                settings.desktopCloseQuitMode == .all,
+                "invalid desktop close mode must fall back to all"
+            )
         }
     }
 
-    private static func testControlHoverSizeClamp() {
+    private static func testTrafficLightHoverSizeClamp() {
         withDefaults { defaults in
             let settings = AppSettings(defaults: defaults)
-            settings.previewControlHoverTargetSize = -100
+            settings.desktopTrafficLightHoverTargetSize = -100
             expect(
-                settings.previewControlHoverTargetSize == AppSettings.minimumPreviewControlSize,
-                "hover size must clamp to its minimum"
+                settings.desktopTrafficLightHoverTargetSize
+                    == AppSettings.minimumDesktopTrafficLightSize,
+                "desktop traffic-light size must clamp to its minimum"
             )
 
-            settings.previewControlHoverTargetSize = 100
+            settings.desktopTrafficLightHoverTargetSize = 100
             expect(
-                settings.previewControlHoverTargetSize == AppSettings.maximumPreviewControlSize,
-                "hover size must clamp to its maximum"
+                settings.desktopTrafficLightHoverTargetSize
+                    == AppSettings.maximumDesktopTrafficLightSize,
+                "desktop traffic-light size must clamp to its maximum"
             )
 
-            defaults.set(Double.nan, forKey: "previewControlHoverTargetSize")
+            defaults.set(
+                Double.nan,
+                forKey: "desktopTrafficLightHoverTargetSize"
+            )
             expect(
-                settings.previewControlHoverTargetSize == AppSettings.defaultPreviewControlHoverTargetSize,
-                "non-finite hover size must fall back to the default"
+                settings.desktopTrafficLightHoverTargetSize
+                    == AppSettings.defaultDesktopTrafficLightHoverTargetSize,
+                "non-finite desktop traffic-light size must use the default"
             )
         }
     }
@@ -421,7 +526,10 @@ private enum AppSettingsPolicyTests {
         defaults.removePersistentDomain(forName: suiteName)
     }
 
-    private static func expect(_ condition: @autoclosure () -> Bool, _ message: String) {
+    private static func expect(
+        _ condition: @autoclosure () -> Bool,
+        _ message: String
+    ) {
         guard condition() else {
             failureCount += 1
             fputs("FAIL: \(message)\n", stderr)

@@ -1,5 +1,6 @@
 import AppKit
 import ApplicationServices
+import CoreGraphics
 import Foundation
 
 enum DockEdge: String {
@@ -110,7 +111,11 @@ final class DockInspector {
                 continue
             }
 
-            if let item = bestDockItem(from: element, edge: region.edge, strictApplicationOnly: false) {
+            if let item = bestDockItem(
+                from: element,
+                edge: region.edge,
+                strictApplicationOnly: false
+            ) {
                 return item
             }
         }
@@ -119,19 +124,40 @@ final class DockInspector {
         return nil
     }
 
-    func applicationDockItem(at point: NSPoint, in region: DockRegion) -> DockItem? {
+    func applicationDockItem(
+        at point: NSPoint,
+        in region: DockRegion
+    ) -> DockItem? {
         guard AXIsProcessTrusted() else { return nil }
-        guard let dockApp = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier == "com.apple.dock" }) else {
+        guard
+            let dockApp = NSWorkspace.shared.runningApplications.first(
+                where: { $0.bundleIdentifier == "com.apple.dock" }
+            )
+        else {
             return nil
         }
 
-        let dockElement = AXUIElementCreateApplication(dockApp.processIdentifier)
-        for lookupPoint in accessibilityLookupPoints(for: point, on: region.screen) {
+        let dockElement = AXUIElementCreateApplication(
+            dockApp.processIdentifier
+        )
+        for lookupPoint in accessibilityLookupPoints(
+            for: point,
+            on: region.screen
+        ) {
             var element: AXUIElement?
-            let error = AXUIElementCopyElementAtPosition(dockElement, Float(lookupPoint.x), Float(lookupPoint.y), &element)
+            let error = AXUIElementCopyElementAtPosition(
+                dockElement,
+                Float(lookupPoint.x),
+                Float(lookupPoint.y),
+                &element
+            )
             guard error == .success, let element else { continue }
 
-            if let item = bestDockItem(from: element, edge: region.edge, strictApplicationOnly: true) {
+            if let item = bestDockItem(
+                from: element,
+                edge: region.edge,
+                strictApplicationOnly: true
+            ) {
                 return item
             }
         }
@@ -156,11 +182,15 @@ final class DockInspector {
             let title = stringAttribute(candidate, attribute: kAXTitleAttribute)
             let description = stringAttribute(candidate, attribute: kAXDescriptionAttribute)
             let role = stringAttribute(candidate, attribute: kAXRoleAttribute)
-            let subrole = stringAttribute(candidate, attribute: kAXSubroleAttribute)
+            let subrole = stringAttribute(
+                candidate,
+                attribute: kAXSubroleAttribute
+            )
             let identifier = stringAttribute(candidate, attribute: kAXIdentifierAttribute)
 
             if strictApplicationOnly,
-               (role != AXDockRole.dockItem || subrole != AXDockRole.applicationDockItem) {
+               (role != AXDockRole.dockItem
+                    || subrole != AXDockRole.applicationDockItem) {
                 continue
             }
 
@@ -264,14 +294,32 @@ final class DockInspector {
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    private func accessibilityLookupPoints(for point: NSPoint, on screen: NSScreen) -> [NSPoint] {
-        let localY = point.y - screen.frame.minY
-        let flippedY = screen.frame.maxY - localY
-        let flipped = NSPoint(x: point.x, y: flippedY)
-        if abs(flipped.y - point.y) < 0.5 {
+    private func accessibilityLookupPoints(
+        for point: NSPoint,
+        on screen: NSScreen
+    ) -> [NSPoint] {
+        guard
+            let number = screen.deviceDescription[
+                NSDeviceDescriptionKey("NSScreenNumber")
+            ] as? NSNumber
+        else {
             return [point]
         }
-        return [flipped, point]
+
+        let displayBounds = CGDisplayBounds(
+            CGDirectDisplayID(number.uint32Value)
+        )
+        let accessibilityPoint = NSPoint(
+            x: displayBounds.minX + (point.x - screen.frame.minX),
+            y: displayBounds.minY + (screen.frame.maxY - point.y)
+        )
+        if hypot(
+            accessibilityPoint.x - point.x,
+            accessibilityPoint.y - point.y
+        ) < 0.5 {
+            return [point]
+        }
+        return [accessibilityPoint, point]
     }
 
     private func screen(containing point: NSPoint) -> NSScreen? {

@@ -72,17 +72,17 @@ private final class SettingsContentController {
     private let hoverDelayValuePill = YSettingPill(text: "100 ms", tone: .accent)
     private let thumbnailSlider = NSSlider(value: 165, minValue: 100, maxValue: 260, target: nil, action: nil)
     private let thumbnailValuePill = YSettingPill(text: "165 px", tone: .neutral)
-    private let controlHoverSizeSlider = NSSlider(
-        value: Double(AppSettings.defaultPreviewControlHoverTargetSize),
-        minValue: Double(AppSettings.minimumPreviewControlSize),
-        maxValue: Double(AppSettings.maximumPreviewControlSize),
+    private let trafficLightHoverSizeSlider = NSSlider(
+        value: Double(AppSettings.defaultDesktopTrafficLightHoverTargetSize),
+        minValue: Double(AppSettings.minimumDesktopTrafficLightSize),
+        maxValue: Double(AppSettings.maximumDesktopTrafficLightSize),
         target: nil,
         action: nil
     )
-    private let controlHoverSizeValuePill = YSettingPill(text: "23.0 px", tone: .accent)
-    private let controlHoverSizePreview = PreviewControlSizeSampleView()
+    private let trafficLightHoverSizeValuePill = YSettingPill(text: "23.0 px", tone: .accent)
+    private let trafficLightHoverSizePreview = DesktopTrafficLightSizeSampleView()
     private let dockClickMinimizeModePopUp = NSPopUpButton(frame: .zero, pullsDown: false)
-    private let previewCloseQuitModePopUp = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let desktopCloseQuitModePopUp = NSPopUpButton(frame: .zero, pullsDown: false)
     private let closePolicyListStack = NSStackView()
     private let launchAtLoginStatusPill = YSettingPill(text: "未开启", tone: .neutral)
     private let updateStatusPill = YSettingPill(text: "", tone: .neutral)
@@ -92,9 +92,9 @@ private final class SettingsContentController {
     private let optionTabShortcutPill = YSettingPill(text: "⌥ Tab", tone: .accent)
 
     private lazy var showTitleSwitch = YSettingUI.makeSwitch(target: self, action: #selector(showTitleChanged(_:)))
-    private lazy var controlHoverEnlargementSwitch = YSettingUI.makeSwitch(target: self, action: #selector(controlHoverEnlargementChanged(_:)))
-    private lazy var controlRegionRevealSwitch = YSettingUI.makeSwitch(target: self, action: #selector(controlRegionRevealChanged(_:)))
-    private lazy var previewCloseQuitsApplicationSwitch = YSettingUI.makeSwitch(target: self, action: #selector(previewCloseQuitsApplicationChanged(_:)))
+    private lazy var trafficLightHoverEnlargementSwitch = YSettingUI.makeSwitch(target: self, action: #selector(trafficLightHoverEnlargementChanged(_:)))
+    private lazy var trafficLightRevealSwitch = YSettingUI.makeSwitch(target: self, action: #selector(trafficLightRevealChanged(_:)))
+    private lazy var desktopCloseQuitsApplicationSwitch = YSettingUI.makeSwitch(target: self, action: #selector(desktopCloseQuitsApplicationChanged(_:)))
     private lazy var launchAtLoginSwitch = YSettingUI.makeSwitch(target: self, action: #selector(launchAtLoginChanged(_:)))
     private lazy var debugSwitch = YSettingUI.makeSwitch(target: self, action: #selector(debugChanged(_:)))
     private lazy var openLoginItemsButton = makeButton(title: "登录项", symbolName: "person.crop.circle.badge.checkmark", action: #selector(openLoginItemsSettings))
@@ -212,13 +212,20 @@ private final class SettingsContentController {
                 YSettingUI.sliderRow(title: "悬停延迟", slider: hoverDelaySlider, valueView: hoverDelayValuePill),
                 YSettingUI.sliderRow(title: "缩略图高度", slider: thumbnailSlider, valueView: thumbnailValuePill),
                 YSettingUI.divider(),
-                YSettingUI.row(title: "显示窗口标题", trailingView: showTitleSwitch),
-                YSettingUI.row(title: "控制按钮仅在左上区域显示", trailingView: controlRegionRevealSwitch),
-                YSettingUI.row(title: "控制按钮 hover 放大", trailingView: controlHoverEnlargementSwitch),
+                YSettingUI.row(title: "显示窗口标题", trailingView: showTitleSwitch)
+            ]
+        ))
+
+        stack.addArrangedSubview(YSettingSectionView(
+            title: "桌面窗口红绿灯",
+            symbolName: "macwindow",
+            views: [
+                YSettingUI.row(title: "鼠标进入左上区域后显示", trailingView: trafficLightRevealSwitch),
+                YSettingUI.row(title: "悬浮单颗按钮时放大", trailingView: trafficLightHoverEnlargementSwitch),
                 YSettingUI.sliderRow(
-                    title: "按钮 hover 大小",
-                    slider: controlHoverSizeSlider,
-                    valueView: YSettingUI.horizontal([controlHoverSizePreview, controlHoverSizeValuePill], spacing: 6)
+                    title: "悬浮目标大小",
+                    slider: trafficLightHoverSizeSlider,
+                    valueView: YSettingUI.horizontal([trafficLightHoverSizePreview, trafficLightHoverSizeValuePill], spacing: 6)
                 )
             ]
         ))
@@ -233,11 +240,11 @@ private final class SettingsContentController {
 
         rebuildClosePolicyList()
         stack.addArrangedSubview(YSettingSectionView(
-            title: "关闭按钮",
+            title: "桌面窗口红色按钮",
             symbolName: "xmark.circle",
             views: [
-                YSettingUI.row(title: "改为请求退出 App", trailingView: previewCloseQuitsApplicationSwitch),
-                YSettingUI.row(title: "应用范围", trailingView: previewCloseQuitModePopUp),
+                YSettingUI.row(title: "红色按钮改为请求退出 App", trailingView: desktopCloseQuitsApplicationSwitch),
+                YSettingUI.row(title: "应用范围", trailingView: desktopCloseQuitModePopUp),
                 closePolicyListStack
             ]
         ))
@@ -392,7 +399,7 @@ private final class SettingsContentController {
             view.removeFromSuperview()
         }
 
-        let mode = settings.previewCloseQuitMode
+        let mode = settings.desktopCloseQuitMode
         guard mode != .all else {
             closePolicyListStack.isHidden = true
             return
@@ -401,13 +408,13 @@ private final class SettingsContentController {
         closePolicyListStack.isHidden = false
         closePolicyListStack.addArrangedSubview(YSettingUI.divider())
         closePolicyListStack.addArrangedSubview(YSettingUI.row(
-            title: mode == .blacklist ? "黑名单 App" : "白名单 App",
+            title: mode == .blacklist ? "不退出的 App" : "允许退出的 App",
             trailingView: addClosePolicyApplicationButton
         ))
 
         let bundleIdentifiers = mode == .blacklist
-            ? settings.previewCloseQuitBlacklist
-            : settings.previewCloseQuitWhitelist
+            ? settings.desktopCloseQuitBlacklist
+            : settings.desktopCloseQuitWhitelist
 
         if bundleIdentifiers.isEmpty {
             closePolicyListStack.addArrangedSubview(YSettingUI.row(
@@ -485,10 +492,10 @@ private final class SettingsContentController {
         thumbnailSlider.controlSize = .small
         thumbnailSlider.isContinuous = true
 
-        controlHoverSizeSlider.target = self
-        controlHoverSizeSlider.action = #selector(controlHoverSizeChanged(_:))
-        controlHoverSizeSlider.controlSize = .small
-        controlHoverSizeSlider.isContinuous = true
+        trafficLightHoverSizeSlider.target = self
+        trafficLightHoverSizeSlider.action = #selector(trafficLightHoverSizeChanged(_:))
+        trafficLightHoverSizeSlider.controlSize = .small
+        trafficLightHoverSizeSlider.isContinuous = true
 
         configureModePopUp(
             dockClickMinimizeModePopUp,
@@ -496,9 +503,9 @@ private final class SettingsContentController {
             action: #selector(dockClickMinimizeModeChanged(_:))
         )
         configureModePopUp(
-            previewCloseQuitModePopUp,
-            values: PreviewCloseQuitMode.allCases.map { ($0.displayName, $0.rawValue) },
-            action: #selector(previewCloseQuitModeChanged(_:))
+            desktopCloseQuitModePopUp,
+            values: DesktopCloseQuitMode.allCases.map { ($0.displayName, $0.rawValue) },
+            action: #selector(desktopCloseQuitModeChanged(_:))
         )
 
         closePolicyListStack.orientation = .vertical
@@ -516,17 +523,17 @@ private final class SettingsContentController {
         thumbnailValuePill.setText(String(format: "%.0f px", settings.thumbnailHeight), tone: .neutral)
 
         showTitleSwitch.state = settings.showWindowTitles ? .on : .off
-        controlRegionRevealSwitch.state = settings.previewControlsRevealOnControlAreaOnly ? .on : .off
-        controlHoverEnlargementSwitch.state = settings.previewControlHoverEnlargementEnabled ? .on : .off
-        controlHoverSizeSlider.doubleValue = Double(settings.previewControlHoverTargetSize)
-        controlHoverSizeValuePill.setText(
-            String(format: "%.1f px", settings.previewControlHoverTargetSize),
+        trafficLightRevealSwitch.state = settings.desktopTrafficLightsRevealOnHover ? .on : .off
+        trafficLightHoverEnlargementSwitch.state = settings.desktopTrafficLightHoverEnlargementEnabled ? .on : .off
+        trafficLightHoverSizeSlider.doubleValue = Double(settings.desktopTrafficLightHoverTargetSize)
+        trafficLightHoverSizeValuePill.setText(
+            String(format: "%.1f px", settings.desktopTrafficLightHoverTargetSize),
             tone: .accent
         )
-        controlHoverSizePreview.diameter = settings.previewControlHoverTargetSize
+        trafficLightHoverSizePreview.diameter = settings.desktopTrafficLightHoverTargetSize
         selectMode(settings.dockClickMinimizeMode.rawValue, in: dockClickMinimizeModePopUp)
-        previewCloseQuitsApplicationSwitch.state = settings.previewCloseQuitsApplicationEnabled ? .on : .off
-        selectMode(settings.previewCloseQuitMode.rawValue, in: previewCloseQuitModePopUp)
+        desktopCloseQuitsApplicationSwitch.state = settings.desktopCloseQuitsApplicationEnabled ? .on : .off
+        selectMode(settings.desktopCloseQuitMode.rawValue, in: desktopCloseQuitModePopUp)
         rebuildClosePolicyList()
         debugSwitch.state = settings.debugLoggingEnabled ? .on : .off
         refreshLaunchAtLoginStatus()
@@ -608,18 +615,18 @@ private final class SettingsContentController {
         refreshValues()
     }
 
-    @objc private func controlHoverEnlargementChanged(_ sender: NSSwitch) {
-        settings.previewControlHoverEnlargementEnabled = sender.state == .on
+    @objc private func trafficLightHoverEnlargementChanged(_ sender: NSSwitch) {
+        settings.desktopTrafficLightHoverEnlargementEnabled = sender.state == .on
         refreshValues()
     }
 
-    @objc private func controlHoverSizeChanged(_ sender: NSSlider) {
-        settings.previewControlHoverTargetSize = CGFloat(sender.doubleValue)
+    @objc private func trafficLightHoverSizeChanged(_ sender: NSSlider) {
+        settings.desktopTrafficLightHoverTargetSize = CGFloat(sender.doubleValue)
         refreshValues()
     }
 
-    @objc private func controlRegionRevealChanged(_ sender: NSSwitch) {
-        settings.previewControlsRevealOnControlAreaOnly = sender.state == .on
+    @objc private func trafficLightRevealChanged(_ sender: NSSwitch) {
+        settings.desktopTrafficLightsRevealOnHover = sender.state == .on
         refreshValues()
     }
 
@@ -636,29 +643,29 @@ private final class SettingsContentController {
         refreshValues()
     }
 
-    @objc private func previewCloseQuitsApplicationChanged(_ sender: NSSwitch) {
-        settings.previewCloseQuitsApplicationEnabled = sender.state == .on
+    @objc private func desktopCloseQuitsApplicationChanged(_ sender: NSSwitch) {
+        settings.desktopCloseQuitsApplicationEnabled = sender.state == .on
         refreshValues()
     }
 
-    @objc private func previewCloseQuitModeChanged(_ sender: NSPopUpButton) {
+    @objc private func desktopCloseQuitModeChanged(_ sender: NSPopUpButton) {
         guard
             let rawValue = sender.selectedItem?.representedObject as? String,
-            let mode = PreviewCloseQuitMode(rawValue: rawValue)
+            let mode = DesktopCloseQuitMode(rawValue: rawValue)
         else {
-            settings.previewCloseQuitMode = .all
+            settings.desktopCloseQuitMode = .all
             refreshValues()
             return
         }
-        settings.previewCloseQuitMode = mode
+        settings.desktopCloseQuitMode = mode
         refreshValues()
     }
 
     @objc private func addClosePolicyApplication() {
-        guard settings.previewCloseQuitMode != .all else { return }
+        guard settings.desktopCloseQuitMode != .all else { return }
 
         let panel = NSOpenPanel()
-        panel.title = settings.previewCloseQuitMode == .blacklist ? "添加到黑名单" : "添加到白名单"
+        panel.title = settings.desktopCloseQuitMode == .blacklist ? "添加不退出的 App" : "添加允许退出的 App"
         panel.prompt = "添加"
         panel.directoryURL = URL(fileURLWithPath: "/Applications", isDirectory: true)
         panel.canChooseFiles = true
@@ -677,15 +684,15 @@ private final class SettingsContentController {
                 return
             }
 
-            switch self.settings.previewCloseQuitMode {
+            switch self.settings.desktopCloseQuitMode {
             case .blacklist:
-                var identifiers = self.settings.previewCloseQuitBlacklist
+                var identifiers = self.settings.desktopCloseQuitBlacklist
                 identifiers.insert(bundleIdentifier)
-                self.settings.previewCloseQuitBlacklist = identifiers
+                self.settings.desktopCloseQuitBlacklist = identifiers
             case .whitelist:
-                var identifiers = self.settings.previewCloseQuitWhitelist
+                var identifiers = self.settings.desktopCloseQuitWhitelist
                 identifiers.insert(bundleIdentifier)
-                self.settings.previewCloseQuitWhitelist = identifiers
+                self.settings.desktopCloseQuitWhitelist = identifiers
             case .all:
                 return
             }
@@ -696,15 +703,15 @@ private final class SettingsContentController {
     @objc private func removeClosePolicyApplication(_ sender: NSButton) {
         guard let bundleIdentifier = sender.identifier?.rawValue else { return }
 
-        switch settings.previewCloseQuitMode {
+        switch settings.desktopCloseQuitMode {
         case .blacklist:
-            var identifiers = settings.previewCloseQuitBlacklist
+            var identifiers = settings.desktopCloseQuitBlacklist
             identifiers.remove(bundleIdentifier)
-            settings.previewCloseQuitBlacklist = identifiers
+            settings.desktopCloseQuitBlacklist = identifiers
         case .whitelist:
-            var identifiers = settings.previewCloseQuitWhitelist
+            var identifiers = settings.desktopCloseQuitWhitelist
             identifiers.remove(bundleIdentifier)
-            settings.previewCloseQuitWhitelist = identifiers
+            settings.desktopCloseQuitWhitelist = identifiers
         case .all:
             return
         }
@@ -947,16 +954,16 @@ private final class SettingsContentController {
     }
 }
 
-private final class PreviewControlSizeSampleView: NSView {
-    var diameter = AppSettings.defaultPreviewControlHoverTargetSize {
+private final class DesktopTrafficLightSizeSampleView: NSView {
+    var diameter = AppSettings.defaultDesktopTrafficLightHoverTargetSize {
         didSet {
             if !diameter.isFinite {
-                diameter = AppSettings.defaultPreviewControlHoverTargetSize
+                diameter = AppSettings.defaultDesktopTrafficLightHoverTargetSize
                 return
             }
             diameter = max(
-                AppSettings.minimumPreviewControlSize,
-                min(AppSettings.maximumPreviewControlSize, diameter)
+                AppSettings.minimumDesktopTrafficLightSize,
+                min(AppSettings.maximumDesktopTrafficLightSize, diameter)
             )
             needsDisplay = true
         }
@@ -964,8 +971,8 @@ private final class PreviewControlSizeSampleView: NSView {
 
     override var intrinsicContentSize: NSSize {
         NSSize(
-            width: AppSettings.maximumPreviewControlSize,
-            height: AppSettings.maximumPreviewControlSize
+            width: AppSettings.maximumDesktopTrafficLightSize,
+            height: AppSettings.maximumDesktopTrafficLightSize
         )
     }
 

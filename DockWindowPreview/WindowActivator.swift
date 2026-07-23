@@ -26,6 +26,32 @@ final class WindowActivator {
         }
     }
 
+    private struct BatchMatch {
+        let targetIndex: Int
+        let targetWindow: WindowInfo
+        let axWindow: AXUIElement
+    }
+
+    private struct AXWindowSet {
+        private var buckets: [CFHashCode: [AXUIElement]] = [:]
+
+        mutating func insert(_ window: AXUIElement) -> Bool {
+            let hash = CFHash(window)
+            if let bucket = buckets[hash],
+               bucket.contains(where: { CFEqual($0, window) }) {
+                return false
+            }
+
+            buckets[hash, default: []].append(window)
+            return true
+        }
+
+        func contains(_ window: AXUIElement) -> Bool {
+            let hash = CFHash(window)
+            return buckets[hash]?.contains(where: { CFEqual($0, window) }) ?? false
+        }
+    }
+
     private var axWindowCache: [CGWindowID: AXUIElement] = [:]
 
     func activate(_ window: WindowInfo) {
@@ -129,16 +155,51 @@ final class WindowActivator {
 
     @discardableResult
     func minimize(_ windows: [WindowInfo]) -> Int {
-        windows.reduce(into: 0) { minimizedCount, window in
-            guard !window.isMinimized, minimize(window) else { return }
-            minimizedCount += 1
+        guard !windows.isEmpty else { return 0 }
+        guard AXIsProcessTrusted() else {
+            DWLog("Accessibility is not trusted; cannot minimize specific windows")
+            return 0
         }
+
+        var pidOrder: [pid_t] = []
+        var windowsByPID: [pid_t: [WindowInfo]] = [:]
+        for window in windows {
+            if windowsByPID[window.ownerPID] == nil {
+                pidOrder.append(window.ownerPID)
+            }
+            windowsByPID[window.ownerPID, default: []].append(window)
+        }
+
+        var minimizedCount = 0
+        for ownerPID in pidOrder {
+            guard let targetWindows = windowsByPID[ownerPID], !targetWindows.isEmpty else { continue }
+
+            let appElement = AXUIElementCreateApplication(ownerPID)
+            let axWindows = candidateWindows(for: appElement)
+            guard !axWindows.isEmpty else {
+                DWLog("No AX windows available for pid \(ownerPID)")
+                continue
+            }
+
+            for match in batchMatches(for: targetWindows, in: axWindows) {
+                let error = AXUIElementSetAttributeValue(match.axWindow, kAXMinimizedAttribute as CFString, kCFBooleanTrue)
+                if error != .success {
+                    DWLog("Setting AXMinimized failed for '\(match.targetWindow.title)': \(error.rawValue)")
+                    continue
+                }
+
+                axWindowCache.removeValue(forKey: match.targetWindow.windowID)
+                minimizedCount += 1
+            }
+        }
+
+        return minimizedCount
     }
 
     @discardableResult
     func gracefulQuitApplication(ownerPID: pid_t) -> Bool {
         guard let app = NSRunningApplication(processIdentifier: ownerPID) else {
-            DWLog("Cannot find running application to gracefully quit for pid \(ownerPID)")
+            DWLog("Cannot find running application to quit for pid \(ownerPID)")
             return false
         }
 
@@ -147,11 +208,12 @@ final class WindowActivator {
             return true
         }
 
-        let didRequestTermination = app.terminate()
-        if !didRequestTermination {
-            DWLog("Graceful terminate failed for pid \(ownerPID)")
+        if app.terminate() {
+            return true
         }
-        return didRequestTermination
+
+        DWLog("Graceful terminate failed for pid \(ownerPID)")
+        return false
     }
 
     @discardableResult
@@ -255,16 +317,111 @@ final class WindowActivator {
     }
 
     private func uniqueAXWindows(_ windows: [AXUIElement]) -> [AXUIElement] {
-        var seen = Set<CFHashCode>()
+        var seen = AXWindowSet()
         var unique: [AXUIElement] = []
 
         for window in windows {
-            let hash = CFHash(window)
-            guard seen.insert(hash).inserted else { continue }
+            guard seen.insert(window) else { continue }
             unique.append(window)
         }
 
         return unique
+    }
+
+    private func batchMatches(for targetWindows: [WindowInfo], in axWindows: [AXUIElement]) -> [BatchMatch] {
+        guard !targetWindows.isEmpty, !axWindows.isEmpty else { return [] }
+
+        let detailsByTarget = targetWindows.map { targetWindow in
+            axWindows.map { axWindow in
+                matchDetails(targetWindow: targetWindow, axWindow: axWindow)
+            }
+        }
+
+        var matches: [BatchMatch] = []
+        var claimedWindows = AXWindowSet()
+        var claimedTargetIndexes = Set<Int>()
+        var skippedTargetIndexes = Set<Int>()
+
+        for targetIndex in targetWindows.indices {
+            let exactMatches = detailsByTarget[targetIndex].filter { $0.windowIDScore > 0 }
+            guard !exactMatches.isEmpty else { continue }
+
+            guard exactMatches.count == 1 else {
+                DWLog("Skipping ambiguous AX window ID match for '\(targetWindows[targetIndex].title)'")
+                skippedTargetIndexes.insert(targetIndex)
+                continue
+            }
+
+            let details = exactMatches[0]
+            guard claimedWindows.insert(details.window) else {
+                DWLog("Skipping duplicate AX window ID claim for '\(targetWindows[targetIndex].title)'")
+                skippedTargetIndexes.insert(targetIndex)
+                continue
+            }
+
+            claimedTargetIndexes.insert(targetIndex)
+            matches.append(BatchMatch(targetIndex: targetIndex, targetWindow: targetWindows[targetIndex], axWindow: details.window))
+        }
+
+        var fallbackProposals: [BatchMatch] = []
+        for targetIndex in targetWindows.indices where !claimedTargetIndexes.contains(targetIndex) && !skippedTargetIndexes.contains(targetIndex) {
+            let availableDetails = detailsByTarget[targetIndex].filter { !claimedWindows.contains($0.window) }
+            guard let details = conservativeBestFallbackMatch(for: targetWindows[targetIndex], details: availableDetails) else { continue }
+            fallbackProposals.append(BatchMatch(targetIndex: targetIndex, targetWindow: targetWindows[targetIndex], axWindow: details.window))
+        }
+
+        for proposal in fallbackProposals {
+            let conflictCount = fallbackProposals.reduce(0) { count, other in
+                count + (CFEqual(proposal.axWindow, other.axWindow) ? 1 : 0)
+            }
+            guard conflictCount == 1 else {
+                DWLog("Skipping ambiguous batch AX match for '\(proposal.targetWindow.title)' because another target selects the same Accessibility window")
+                continue
+            }
+
+            guard claimedWindows.insert(proposal.axWindow) else { continue }
+            matches.append(proposal)
+        }
+
+        return matches.sorted { $0.targetIndex < $1.targetIndex }
+    }
+
+    private func conservativeBestFallbackMatch(for targetWindow: WindowInfo, details: [MatchDetails]) -> MatchDetails? {
+        guard !details.isEmpty else { return nil }
+
+        var best: MatchDetails?
+        var tiedBestCount = 0
+        for candidate in details {
+            guard let currentBest = best else {
+                best = candidate
+                tiedBestCount = 1
+                continue
+            }
+
+            if candidate.score > currentBest.score {
+                best = candidate
+                tiedBestCount = 1
+            } else if candidate.score == currentBest.score {
+                tiedBestCount += 1
+            }
+        }
+
+        guard let best, best.score >= 28 else { return nil }
+        guard tiedBestCount == 1 else {
+            DWLog("Skipping ambiguous AX match for '\(targetWindow.title)' because multiple windows share score \(best.score)")
+            return nil
+        }
+
+        if best.hasIdentityEvidence || details.count == 1 {
+            return best
+        }
+
+        if hasUsefulTargetTitle(targetWindow) {
+            DWLog("Rejecting geometry-only AX match for '\(targetWindow.title)' because multiple windows are available")
+            return nil
+        }
+
+        return best.score >= 50 ? best : nil
     }
 
     private func bestMatch(for targetWindow: WindowInfo, in axWindows: [AXUIElement]) -> AXUIElement? {

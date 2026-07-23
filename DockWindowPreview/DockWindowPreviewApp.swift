@@ -11,6 +11,8 @@ final class DockWindowPreviewApp: NSObject, NSApplicationDelegate {
     private let windowActivator = WindowActivator()
     private let dockInspector = DockInspector()
     private let updateChecker = UpdateChecker.shared
+    private lazy var desktopWindowControlsController =
+        DesktopWindowControlsController(settings: settings)
 
     private struct PreviewContext {
         let appPID: pid_t
@@ -56,9 +58,6 @@ final class DockWindowPreviewApp: NSObject, NSApplicationDelegate {
         }
         panel.onQuitApplication = { [weak self] window in
             self?.quitApplicationFromPreview(window)
-        }
-        panel.onRequestQuitApplication = { [weak self] window in
-            self?.requestQuitApplicationFromPreview(window)
         }
         return panel
     }()
@@ -120,6 +119,7 @@ final class DockWindowPreviewApp: NSObject, NSApplicationDelegate {
         }
         mouseTracker.start()
         optionTabSwitcher.start()
+        desktopWindowControlsController.start()
         scheduleStartupUpdateCheck()
         showSettingsForPreviewIfRequested()
         DWLog("\(AppBranding.displayName) launched")
@@ -134,6 +134,7 @@ final class DockWindowPreviewApp: NSObject, NSApplicationDelegate {
         cancelDockContextMenuProtectionTimer()
         dockPrimaryClickWorkItem?.cancel()
         dockPrimaryClickWorkItem = nil
+        desktopWindowControlsController.stop()
         optionTabSwitcher.stop()
         mouseTracker.stop()
     }
@@ -248,7 +249,9 @@ final class DockWindowPreviewApp: NSObject, NSApplicationDelegate {
         let workItem = DispatchWorkItem { [weak self] in
             guard
                 let self,
-                let runningApp = NSRunningApplication(processIdentifier: pid),
+                let runningApp = NSRunningApplication(
+                    processIdentifier: pid
+                ),
                 !runningApp.isTerminated
             else {
                 return
@@ -263,7 +266,9 @@ final class DockWindowPreviewApp: NSObject, NSApplicationDelegate {
                 return
             }
 
-            let minimizedCount = self.windowActivator.minimize(windows.filter { !$0.isMinimized })
+            let minimizedCount = self.windowActivator.minimize(
+                windows.filter { !$0.isMinimized }
+            )
             guard minimizedCount > 0 else { return }
 
             self.invalidatePreviewCaches(ownerPID: pid)
@@ -271,7 +276,10 @@ final class DockWindowPreviewApp: NSObject, NSApplicationDelegate {
             self.previewContext = nil
         }
         dockPrimaryClickWorkItem = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + dockPrimaryClickResponseDelay, execute: workItem)
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + dockPrimaryClickResponseDelay,
+            execute: workItem
+        )
     }
 
     private func beginDockContextMenuProtection(at point: NSPoint) {
@@ -385,17 +393,6 @@ final class DockWindowPreviewApp: NSObject, NSApplicationDelegate {
     private func quitApplicationFromPreview(_ window: WindowInfo) {
         invalidatePreviewCaches(ownerPID: window.ownerPID)
         guard windowActivator.quitApplication(ownerPID: window.ownerPID) else {
-            NSSound.beep()
-            return
-        }
-
-        previewPanel.hide()
-        previewContext = nil
-    }
-
-    private func requestQuitApplicationFromPreview(_ window: WindowInfo) {
-        invalidatePreviewCaches(ownerPID: window.ownerPID)
-        guard windowActivator.gracefulQuitApplication(ownerPID: window.ownerPID) else {
             NSSound.beep()
             return
         }

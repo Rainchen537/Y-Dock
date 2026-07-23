@@ -24,7 +24,7 @@ enum DockClickMinimizeMode: String, CaseIterable {
     }
 }
 
-enum PreviewCloseQuitMode: String, CaseIterable {
+enum DesktopCloseQuitMode: String, CaseIterable {
     case all
     case blacklist
     case whitelist
@@ -41,7 +41,7 @@ enum PreviewCloseQuitMode: String, CaseIterable {
     }
 }
 
-enum PreviewCloseAction: Equatable {
+enum DesktopCloseAction: Equatable {
     case closeWindow
     case quitApplication
 }
@@ -57,8 +57,29 @@ struct DockClickWindowStackEntry {
     let isLikelyUserWindow: Bool
 }
 
+struct DockClickTopmostSnapshot {
+    let ownerPID: pid_t?
+    let capturedAt: TimeInterval
+}
+
+struct DockClickFrontmostDecision {
+    let isAccepted: Bool
+    let acceptedStableActivationAfterPointerMove: Bool
+
+    static let rejected = DockClickFrontmostDecision(
+        isAccepted: false,
+        acceptedStableActivationAfterPointerMove: false
+    )
+}
+
 enum DockClickMinimizePolicy {
-    static func shouldMinimize(mode: DockClickMinimizeMode, totalWindowCount: Int) -> Bool {
+    static let minimumStableFrontmostActivationDuration: TimeInterval = 0.18
+    static let maximumPreClickTopmostSnapshotAge: TimeInterval = 0.25
+
+    static func shouldMinimize(
+        mode: DockClickMinimizeMode,
+        totalWindowCount: Int
+    ) -> Bool {
         switch mode {
         case .off:
             return false
@@ -69,6 +90,53 @@ enum DockClickMinimizePolicy {
         }
     }
 
+    static func frontmostDecision(
+        targetPID: pid_t,
+        observedFrontmostPID: pid_t?,
+        trackedFrontmostPID: pid_t?,
+        previousTrackedFrontmostPID: pid_t?,
+        frontmostPIDAtLastPointerMove: pid_t?,
+        frontmostChangedAt: TimeInterval,
+        lastPointerMoveAt: TimeInterval,
+        clickAt: TimeInterval,
+        minimumStableActivationDuration: TimeInterval =
+            minimumStableFrontmostActivationDuration
+    ) -> DockClickFrontmostDecision {
+        guard
+            observedFrontmostPID == targetPID,
+            trackedFrontmostPID == targetPID,
+            clickAt.isFinite,
+            frontmostChangedAt.isFinite,
+            frontmostChangedAt <= clickAt
+        else {
+            return .rejected
+        }
+
+        if frontmostPIDAtLastPointerMove == targetPID,
+           lastPointerMoveAt.isFinite,
+           lastPointerMoveAt > 0,
+           lastPointerMoveAt <= clickAt,
+           lastPointerMoveAt >= frontmostChangedAt {
+            return DockClickFrontmostDecision(
+                isAccepted: true,
+                acceptedStableActivationAfterPointerMove: false
+            )
+        }
+
+        guard
+            previousTrackedFrontmostPID != targetPID,
+            frontmostChangedAt > lastPointerMoveAt,
+            clickAt - frontmostChangedAt >= minimumStableActivationDuration
+        else {
+            return .rejected
+        }
+
+        return DockClickFrontmostDecision(
+            isAccepted: true,
+            acceptedStableActivationAfterPointerMove: true
+        )
+    }
+
     static func targetWasFrontmostBeforeClick(
         targetPID: pid_t,
         observedFrontmostPID: pid_t?,
@@ -76,16 +144,36 @@ enum DockClickMinimizePolicy {
         previousTrackedFrontmostPID: pid_t?,
         frontmostPIDAtLastPointerMove: pid_t?,
         frontmostChangedAt: TimeInterval,
-        lastPointerMoveAt: TimeInterval
+        lastPointerMoveAt: TimeInterval,
+        clickAt: TimeInterval,
+        minimumStableActivationDuration: TimeInterval =
+            minimumStableFrontmostActivationDuration
     ) -> Bool {
-        let targetWasActivatedAfterLastPointerMove = trackedFrontmostPID == targetPID
-            && previousTrackedFrontmostPID != targetPID
-            && frontmostChangedAt > lastPointerMoveAt
+        frontmostDecision(
+            targetPID: targetPID,
+            observedFrontmostPID: observedFrontmostPID,
+            trackedFrontmostPID: trackedFrontmostPID,
+            previousTrackedFrontmostPID: previousTrackedFrontmostPID,
+            frontmostPIDAtLastPointerMove: frontmostPIDAtLastPointerMove,
+            frontmostChangedAt: frontmostChangedAt,
+            lastPointerMoveAt: lastPointerMoveAt,
+            clickAt: clickAt,
+            minimumStableActivationDuration:
+                minimumStableActivationDuration
+        ).isAccepted
+    }
 
-        return observedFrontmostPID == targetPID
-            && trackedFrontmostPID == targetPID
-            && frontmostPIDAtLastPointerMove == targetPID
-            && !targetWasActivatedAfterLastPointerMove
+    static func shouldRefreshTopmostSnapshot(
+        isEnabled: Bool,
+        isInsideSnapshotRegion: Bool,
+        wasInsideSnapshotRegion: Bool,
+        now: TimeInterval,
+        lastSnapshotAt: TimeInterval,
+        minimumInterval: TimeInterval
+    ) -> Bool {
+        guard isEnabled, isInsideSnapshotRegion else { return false }
+        return !wasInsideSnapshotRegion
+            || now - lastSnapshotAt >= minimumInterval
     }
 
     static func isEligibleTopmostUserWindow(
@@ -110,25 +198,75 @@ enum DockClickMinimizePolicy {
         entries.first(where: isEligibleTopmostUserWindow)?.ownerPID
     }
 
+    static func recentTopmostSnapshotOwnerPID(
+        targetPID: pid_t,
+        snapshots: [DockClickTopmostSnapshot],
+        clickAt: TimeInterval,
+        capturedNotBefore: TimeInterval? = nil,
+        maximumSnapshotAge: TimeInterval =
+            maximumPreClickTopmostSnapshotAge
+    ) -> pid_t? {
+        guard clickAt.isFinite else { return nil }
+
+        let latestSnapshot = snapshots
+            .filter { snapshot in
+                snapshot.capturedAt.isFinite
+                    && snapshot.capturedAt <= clickAt
+                    && capturedNotBefore.map {
+                        snapshot.capturedAt >= $0
+                    } ?? true
+            }
+            .max { $0.capturedAt < $1.capturedAt }
+
+        guard
+            let latestSnapshot,
+            clickAt - latestSnapshot.capturedAt <= maximumSnapshotAge,
+            latestSnapshot.ownerPID == targetPID
+        else {
+            return nil
+        }
+        return targetPID
+    }
+
+    static func stableTopmostSnapshotOwnerPID(
+        targetPID: pid_t,
+        snapshots: [DockClickTopmostSnapshot],
+        frontmostChangedAt: TimeInterval,
+        clickAt: TimeInterval,
+        minimumStableActivationDuration: TimeInterval =
+            minimumStableFrontmostActivationDuration,
+        maximumSnapshotAge: TimeInterval =
+            maximumPreClickTopmostSnapshotAge
+    ) -> pid_t? {
+        recentTopmostSnapshotOwnerPID(
+            targetPID: targetPID,
+            snapshots: snapshots,
+            clickAt: clickAt,
+            capturedNotBefore:
+                frontmostChangedAt + minimumStableActivationDuration,
+            maximumSnapshotAge: maximumSnapshotAge
+        )
+    }
+
     static func targetOwnedTopmostUserWindowBeforeClick(
         targetPID: pid_t,
         observedTopmostUserWindowOwnerPID: pid_t?,
-        topmostUserWindowOwnerPIDAtLastPointerMove: pid_t?
+        preClickTopmostUserWindowOwnerPID: pid_t?
     ) -> Bool {
         observedTopmostUserWindowOwnerPID == targetPID
-            && topmostUserWindowOwnerPIDAtLastPointerMove == targetPID
+            && preClickTopmostUserWindowOwnerPID == targetPID
     }
 }
 
-enum PreviewCloseActionPolicy {
+enum DesktopCloseActionPolicy {
     static func action(
         isEnabled: Bool,
-        mode: PreviewCloseQuitMode,
+        mode: DesktopCloseQuitMode,
         bundleIdentifier: String?,
         hasRunningApplication: Bool,
         blacklist: Set<String>,
         whitelist: Set<String>
-    ) -> PreviewCloseAction {
+    ) -> DesktopCloseAction {
         guard isEnabled, hasRunningApplication else {
             return .closeWindow
         }
@@ -140,18 +278,24 @@ enum PreviewCloseActionPolicy {
             guard let bundleIdentifier, !bundleIdentifier.isEmpty else {
                 return .closeWindow
             }
-            return blacklist.contains(bundleIdentifier) ? .closeWindow : .quitApplication
+            return blacklist.contains(bundleIdentifier)
+                ? .closeWindow
+                : .quitApplication
         case .whitelist:
             guard let bundleIdentifier, !bundleIdentifier.isEmpty else {
                 return .closeWindow
             }
-            return whitelist.contains(bundleIdentifier) ? .quitApplication : .closeWindow
+            return whitelist.contains(bundleIdentifier)
+                ? .quitApplication
+                : .closeWindow
         }
     }
 }
 
 extension Notification.Name {
-    static let appSettingsChanged = Notification.Name("DockWindowPreview.appSettingsChanged")
+    static let appSettingsChanged = Notification.Name(
+        "DockWindowPreview.appSettingsChanged"
+    )
 }
 
 final class AppSettings {
@@ -164,21 +308,40 @@ final class AppSettings {
         static let launchAtLogin = "launchAtLogin"
         static let debugLoggingEnabled = "debugLoggingEnabled"
         static let dockClickMinimizeMode = "dockClickMinimizeMode"
-        static let previewControlHoverEnlargementEnabled = "previewControlHoverEnlargementEnabled"
-        static let previewControlHoverTargetSize = "previewControlHoverTargetSize"
-        static let previewControlsRevealOnControlAreaOnly = "previewControlsRevealOnControlAreaOnly"
-        static let previewCloseQuitsApplicationEnabled = "previewCloseQuitsApplicationEnabled"
-        static let previewCloseQuitMode = "previewCloseQuitMode"
-        static let previewCloseQuitBlacklist = "previewCloseQuitBlacklist"
-        static let previewCloseQuitWhitelist = "previewCloseQuitWhitelist"
+        static let desktopTrafficLightHoverEnlargementEnabled =
+            "desktopTrafficLightHoverEnlargementEnabled"
+        static let desktopTrafficLightHoverTargetSize =
+            "desktopTrafficLightHoverTargetSize"
+        static let desktopTrafficLightsRevealOnHover =
+            "desktopTrafficLightsRevealOnHover"
+        static let desktopCloseQuitsApplicationEnabled =
+            "desktopCloseQuitsApplicationEnabled"
+        static let desktopCloseQuitMode = "desktopCloseQuitMode"
+        static let desktopCloseQuitBlacklist =
+            "desktopCloseQuitBlacklist"
+        static let desktopCloseQuitWhitelist =
+            "desktopCloseQuitWhitelist"
         static let defaultsRevision = "defaultsRevision"
     }
 
-    static let minimumPreviewControlSize: CGFloat = 16.5
-    static let maximumPreviewControlSize: CGFloat = 30
-    static let defaultPreviewControlHoverTargetSize: CGFloat = 23
+    private enum LegacyKeys {
+        static let hoverEnlargementEnabled =
+            "previewControlHoverEnlargementEnabled"
+        static let hoverTargetSize = "previewControlHoverTargetSize"
+        static let revealOnControlAreaOnly =
+            "previewControlsRevealOnControlAreaOnly"
+        static let closeQuitsApplicationEnabled =
+            "previewCloseQuitsApplicationEnabled"
+        static let closeQuitMode = "previewCloseQuitMode"
+        static let closeQuitBlacklist = "previewCloseQuitBlacklist"
+        static let closeQuitWhitelist = "previewCloseQuitWhitelist"
+    }
 
-    private let currentDefaultsRevision = 1
+    static let minimumDesktopTrafficLightSize: CGFloat = 14
+    static let maximumDesktopTrafficLightSize: CGFloat = 30
+    static let defaultDesktopTrafficLightHoverTargetSize: CGFloat = 23
+
+    private let currentDefaultsRevision = 2
     private let defaults: UserDefaults
 
     init(defaults: UserDefaults = .standard) {
@@ -187,12 +350,24 @@ final class AppSettings {
     }
 
     var hoverDelay: TimeInterval {
-        get { clamped(defaults.double(forKey: Keys.hoverDelay), min: 0.05, max: 0.8) }
+        get {
+            clamped(
+                defaults.double(forKey: Keys.hoverDelay),
+                min: 0.05,
+                max: 0.8
+            )
+        }
         set { set(newValue, forKey: Keys.hoverDelay) }
     }
 
     var thumbnailHeight: CGFloat {
-        get { CGFloat(clamped(defaults.double(forKey: Keys.thumbnailHeight), min: 100, max: 260)) }
+        get {
+            CGFloat(clamped(
+                defaults.double(forKey: Keys.thumbnailHeight),
+                min: 100,
+                max: 260
+            ))
+        }
         set { set(Double(newValue), forKey: Keys.thumbnailHeight) }
     }
 
@@ -202,8 +377,14 @@ final class AppSettings {
 
     func thumbnailSize(for window: WindowInfo) -> NSSize {
         let height = thumbnailHeight
-        let aspectRatio = window.bounds.height > 0 ? window.bounds.width / window.bounds.height : 1.6
-        let width = clamped(Double(height * aspectRatio), min: 120, max: 460)
+        let aspectRatio = window.bounds.height > 0
+            ? window.bounds.width / window.bounds.height
+            : 1.6
+        let width = clamped(
+            Double(height * aspectRatio),
+            min: 120,
+            max: 460
+        )
         return NSSize(width: CGFloat(width), height: height)
     }
 
@@ -225,82 +406,141 @@ final class AppSettings {
     var dockClickMinimizeMode: DockClickMinimizeMode {
         get {
             guard
-                let rawValue = defaults.string(forKey: Keys.dockClickMinimizeMode),
+                let rawValue = defaults.string(
+                    forKey: Keys.dockClickMinimizeMode
+                ),
                 let mode = DockClickMinimizeMode(rawValue: rawValue)
             else {
                 return .off
             }
             return mode
         }
-        set { set(newValue.rawValue, forKey: Keys.dockClickMinimizeMode) }
+        set {
+            set(newValue.rawValue, forKey: Keys.dockClickMinimizeMode)
+        }
     }
 
-    var previewControlHoverEnlargementEnabled: Bool {
-        get { defaults.bool(forKey: Keys.previewControlHoverEnlargementEnabled) }
-        set { set(newValue, forKey: Keys.previewControlHoverEnlargementEnabled) }
+    var desktopTrafficLightHoverEnlargementEnabled: Bool {
+        get {
+            defaults.bool(
+                forKey: Keys.desktopTrafficLightHoverEnlargementEnabled
+            )
+        }
+        set {
+            set(
+                newValue,
+                forKey: Keys.desktopTrafficLightHoverEnlargementEnabled
+            )
+        }
     }
 
-    var previewControlHoverTargetSize: CGFloat {
+    var desktopTrafficLightHoverTargetSize: CGFloat {
         get {
             CGFloat(clamped(
-                defaults.double(forKey: Keys.previewControlHoverTargetSize),
-                min: Double(Self.minimumPreviewControlSize),
-                max: Double(Self.maximumPreviewControlSize),
-                fallback: Double(Self.defaultPreviewControlHoverTargetSize)
+                defaults.double(
+                    forKey: Keys.desktopTrafficLightHoverTargetSize
+                ),
+                min: Double(Self.minimumDesktopTrafficLightSize),
+                max: Double(Self.maximumDesktopTrafficLightSize),
+                fallback: Double(
+                    Self.defaultDesktopTrafficLightHoverTargetSize
+                )
             ))
         }
         set {
             let value = clamped(
                 Double(newValue),
-                min: Double(Self.minimumPreviewControlSize),
-                max: Double(Self.maximumPreviewControlSize),
-                fallback: Double(Self.defaultPreviewControlHoverTargetSize)
+                min: Double(Self.minimumDesktopTrafficLightSize),
+                max: Double(Self.maximumDesktopTrafficLightSize),
+                fallback: Double(
+                    Self.defaultDesktopTrafficLightHoverTargetSize
+                )
             )
-            set(value, forKey: Keys.previewControlHoverTargetSize)
+            set(value, forKey: Keys.desktopTrafficLightHoverTargetSize)
         }
     }
 
-    var previewControlsRevealOnControlAreaOnly: Bool {
-        get { defaults.bool(forKey: Keys.previewControlsRevealOnControlAreaOnly) }
-        set { set(newValue, forKey: Keys.previewControlsRevealOnControlAreaOnly) }
+    var desktopTrafficLightsRevealOnHover: Bool {
+        get {
+            defaults.bool(forKey: Keys.desktopTrafficLightsRevealOnHover)
+        }
+        set {
+            set(newValue, forKey: Keys.desktopTrafficLightsRevealOnHover)
+        }
     }
 
-    var previewCloseQuitsApplicationEnabled: Bool {
-        get { defaults.bool(forKey: Keys.previewCloseQuitsApplicationEnabled) }
-        set { set(newValue, forKey: Keys.previewCloseQuitsApplicationEnabled) }
+    var desktopCloseQuitsApplicationEnabled: Bool {
+        get {
+            defaults.bool(
+                forKey: Keys.desktopCloseQuitsApplicationEnabled
+            )
+        }
+        set {
+            set(
+                newValue,
+                forKey: Keys.desktopCloseQuitsApplicationEnabled
+            )
+        }
     }
 
-    var previewCloseQuitMode: PreviewCloseQuitMode {
+    var desktopCloseQuitMode: DesktopCloseQuitMode {
         get {
             guard
-                let rawValue = defaults.string(forKey: Keys.previewCloseQuitMode),
-                let mode = PreviewCloseQuitMode(rawValue: rawValue)
+                let rawValue = defaults.string(
+                    forKey: Keys.desktopCloseQuitMode
+                ),
+                let mode = DesktopCloseQuitMode(rawValue: rawValue)
             else {
                 return .all
             }
             return mode
         }
-        set { set(newValue.rawValue, forKey: Keys.previewCloseQuitMode) }
+        set {
+            set(newValue.rawValue, forKey: Keys.desktopCloseQuitMode)
+        }
     }
 
-    var previewCloseQuitBlacklist: Set<String> {
-        get { bundleIdentifiers(forKey: Keys.previewCloseQuitBlacklist) }
-        set { setBundleIdentifiers(newValue, forKey: Keys.previewCloseQuitBlacklist) }
+    var desktopCloseQuitBlacklist: Set<String> {
+        get {
+            bundleIdentifiers(forKey: Keys.desktopCloseQuitBlacklist)
+        }
+        set {
+            setBundleIdentifiers(
+                newValue,
+                forKey: Keys.desktopCloseQuitBlacklist
+            )
+        }
     }
 
-    var previewCloseQuitWhitelist: Set<String> {
-        get { bundleIdentifiers(forKey: Keys.previewCloseQuitWhitelist) }
-        set { setBundleIdentifiers(newValue, forKey: Keys.previewCloseQuitWhitelist) }
+    var desktopCloseQuitWhitelist: Set<String> {
+        get {
+            bundleIdentifiers(forKey: Keys.desktopCloseQuitWhitelist)
+        }
+        set {
+            setBundleIdentifiers(
+                newValue,
+                forKey: Keys.desktopCloseQuitWhitelist
+            )
+        }
     }
 
-    func previewCloseAction(bundleIdentifier: String?, hasRunningApplication: Bool) -> PreviewCloseAction {
-        PreviewCloseActionPolicy.action(
-            isEnabled: previewCloseQuitsApplicationEnabled,
-            mode: previewCloseQuitMode,
+    var requiresDesktopTrafficLightOverlay: Bool {
+        desktopTrafficLightHoverEnlargementEnabled
+            || desktopTrafficLightsRevealOnHover
+            || desktopCloseQuitsApplicationEnabled
+    }
+
+    func desktopCloseAction(
+        bundleIdentifier: String?,
+        hasRunningApplication: Bool
+    ) -> DesktopCloseAction {
+        DesktopCloseActionPolicy.action(
+            isEnabled: desktopCloseQuitsApplicationEnabled,
+            mode: desktopCloseQuitMode,
             bundleIdentifier: bundleIdentifier,
             hasRunningApplication: hasRunningApplication,
-            blacklist: previewCloseQuitBlacklist,
-            whitelist: previewCloseQuitWhitelist
+            blacklist: desktopCloseQuitBlacklist,
+            whitelist: desktopCloseQuitWhitelist
         )
     }
 
@@ -311,14 +551,18 @@ final class AppSettings {
             Keys.showWindowTitles: true,
             Keys.launchAtLogin: false,
             Keys.debugLoggingEnabled: false,
-            Keys.dockClickMinimizeMode: DockClickMinimizeMode.off.rawValue,
-            Keys.previewControlHoverEnlargementEnabled: false,
-            Keys.previewControlHoverTargetSize: Double(Self.defaultPreviewControlHoverTargetSize),
-            Keys.previewControlsRevealOnControlAreaOnly: false,
-            Keys.previewCloseQuitsApplicationEnabled: false,
-            Keys.previewCloseQuitMode: PreviewCloseQuitMode.all.rawValue,
-            Keys.previewCloseQuitBlacklist: [String](),
-            Keys.previewCloseQuitWhitelist: [String](),
+            Keys.dockClickMinimizeMode:
+                DockClickMinimizeMode.off.rawValue,
+            Keys.desktopTrafficLightHoverEnlargementEnabled: false,
+            Keys.desktopTrafficLightHoverTargetSize: Double(
+                Self.defaultDesktopTrafficLightHoverTargetSize
+            ),
+            Keys.desktopTrafficLightsRevealOnHover: false,
+            Keys.desktopCloseQuitsApplicationEnabled: false,
+            Keys.desktopCloseQuitMode:
+                DesktopCloseQuitMode.all.rawValue,
+            Keys.desktopCloseQuitBlacklist: [String](),
+            Keys.desktopCloseQuitWhitelist: [String](),
             Keys.defaultsRevision: 0
         ])
         migrateDefaultsIfNeeded()
@@ -328,31 +572,99 @@ final class AppSettings {
         let revision = defaults.integer(forKey: Keys.defaultsRevision)
         guard revision < currentDefaultsRevision else { return }
 
-        let currentHeight = defaults.double(forKey: Keys.thumbnailHeight)
-        if abs(currentHeight - 150.0) < 0.5 {
-            defaults.set(165.0, forKey: Keys.thumbnailHeight)
+        if revision < 1 {
+            let currentHeight = defaults.double(forKey: Keys.thumbnailHeight)
+            if abs(currentHeight - 150.0) < 0.5 {
+                defaults.set(165.0, forKey: Keys.thumbnailHeight)
+            }
+        }
+
+        if revision < 2 {
+            migrateLegacyDesktopTrafficLightSettings()
         }
 
         defaults.set(currentDefaultsRevision, forKey: Keys.defaultsRevision)
     }
 
-    private func bundleIdentifiers(forKey key: String) -> Set<String> {
-        Set((defaults.stringArray(forKey: key) ?? []).compactMap(normalizedBundleIdentifier))
+    private func migrateLegacyDesktopTrafficLightSettings() {
+        if let value = defaults.object(
+            forKey: LegacyKeys.hoverEnlargementEnabled
+        ) as? Bool {
+            defaults.set(
+                value,
+                forKey: Keys.desktopTrafficLightHoverEnlargementEnabled
+            )
+        }
+        if let value = defaults.object(
+            forKey: LegacyKeys.hoverTargetSize
+        ) as? NSNumber {
+            defaults.set(
+                value.doubleValue,
+                forKey: Keys.desktopTrafficLightHoverTargetSize
+            )
+        }
+        if let value = defaults.object(
+            forKey: LegacyKeys.revealOnControlAreaOnly
+        ) as? Bool {
+            defaults.set(
+                value,
+                forKey: Keys.desktopTrafficLightsRevealOnHover
+            )
+        }
+        if let value = defaults.object(
+            forKey: LegacyKeys.closeQuitsApplicationEnabled
+        ) as? Bool {
+            defaults.set(
+                value,
+                forKey: Keys.desktopCloseQuitsApplicationEnabled
+            )
+        }
+        if let value = defaults.string(
+            forKey: LegacyKeys.closeQuitMode
+        ), DesktopCloseQuitMode(rawValue: value) != nil {
+            defaults.set(value, forKey: Keys.desktopCloseQuitMode)
+        }
+        if let value = defaults.stringArray(
+            forKey: LegacyKeys.closeQuitBlacklist
+        ) {
+            defaults.set(value, forKey: Keys.desktopCloseQuitBlacklist)
+        }
+        if let value = defaults.stringArray(
+            forKey: LegacyKeys.closeQuitWhitelist
+        ) {
+            defaults.set(value, forKey: Keys.desktopCloseQuitWhitelist)
+        }
     }
 
-    private func setBundleIdentifiers(_ identifiers: Set<String>, forKey key: String) {
-        let normalized = Set(identifiers.compactMap(normalizedBundleIdentifier))
+    private func bundleIdentifiers(forKey key: String) -> Set<String> {
+        Set((defaults.stringArray(forKey: key) ?? []).compactMap(
+            normalizedBundleIdentifier
+        ))
+    }
+
+    private func setBundleIdentifiers(
+        _ identifiers: Set<String>,
+        forKey key: String
+    ) {
+        let normalized = Set(identifiers.compactMap(
+            normalizedBundleIdentifier
+        ))
         set(normalized.sorted(), forKey: key)
     }
 
     private func normalizedBundleIdentifier(_ value: String) -> String? {
-        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = value.trimmingCharacters(
+            in: .whitespacesAndNewlines
+        )
         return trimmed.isEmpty ? nil : trimmed
     }
 
     private func set(_ value: Any, forKey key: String) {
         defaults.set(value, forKey: key)
-        NotificationCenter.default.post(name: .appSettingsChanged, object: self)
+        NotificationCenter.default.post(
+            name: .appSettingsChanged,
+            object: self
+        )
     }
 
     private func clamped(

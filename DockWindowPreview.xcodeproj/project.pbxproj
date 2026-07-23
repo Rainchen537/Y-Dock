@@ -27,6 +27,7 @@
 		100000000000000000000019 /* YSettingsFramework.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000121 /* YSettingsFramework.swift */; };
 		100000000000000000000020 /* YPermissionPromptFramework.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000122 /* YPermissionPromptFramework.swift */; };
 		100000000000000000000021 /* UpdateAssetSelector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000123 /* UpdateAssetSelector.swift */; };
+		100000000000000000000022 /* DesktopWindowControlsController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000124 /* DesktopWindowControlsController.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -52,6 +53,7 @@
 		100000000000000000000121 /* YSettingsFramework.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Y-Framework/Setting/YSettingsFramework.swift"; sourceTree = SOURCE_ROOT; };
 		100000000000000000000122 /* YPermissionPromptFramework.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Y-Framework/Permission/YPermissionPromptFramework.swift"; sourceTree = SOURCE_ROOT; };
 		100000000000000000000123 /* UpdateAssetSelector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateAssetSelector.swift; sourceTree = "<group>"; };
+		100000000000000000000124 /* DesktopWindowControlsController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopWindowControlsController.swift; sourceTree = "<group>"; };
 		100000000000000000000201 /* Y-Dock.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Y-Dock.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -87,6 +89,7 @@
 				100000000000000000000104 /* MouseTracker.swift */,
 				100000000000000000000105 /* DockInspector.swift */,
 				100000000000000000000106 /* WindowCollector.swift */,
+				100000000000000000000124 /* DesktopWindowControlsController.swift */,
 				100000000000000000000107 /* WindowThumbnailProvider.swift */,
 				100000000000000000000108 /* PreviewPanel.swift */,
 				100000000000000000000119 /* FocusOverlayPanel.swift */,
@@ -187,6 +190,7 @@
 				100000000000000000000004 /* MouseTracker.swift in Sources */,
 				100000000000000000000005 /* DockInspector.swift in Sources */,
 				100000000000000000000006 /* WindowCollector.swift in Sources */,
+				100000000000000000000022 /* DesktopWindowControlsController.swift in Sources */,
 				100000000000000000000007 /* WindowThumbnailProvider.swift in Sources */,
 				100000000000000000000008 /* PreviewPanel.swift in Sources */,
 				100000000000000000000009 /* WindowActivator.swift in Sources */,

@@ -112,12 +112,18 @@ final class WindowCollector {
     }
 
     func topmostUserWindowOwnerPID(
-        excludingProcessIdentifier excludedPID: pid_t = ProcessInfo.processInfo.processIdentifier
+        excludingProcessIdentifier excludedPID: pid_t =
+            ProcessInfo.processInfo.processIdentifier
     ) -> pid_t? {
         let applicationsByPID = Dictionary(uniqueKeysWithValues:
-            NSWorkspace.shared.runningApplications.map { ($0.processIdentifier, $0) }
+            NSWorkspace.shared.runningApplications.map {
+                ($0.processIdentifier, $0)
+            }
         )
-        let options: CGWindowListOption = [.optionOnScreenOnly, .excludeDesktopElements]
+        let options: CGWindowListOption = [
+            .optionOnScreenOnly,
+            .excludeDesktopElements
+        ]
         guard
             let rawWindows = CGWindowListCopyWindowInfo(
                 options,
@@ -133,7 +139,8 @@ final class WindowCollector {
                 let ownerPID = dictionary[kCGWindowOwnerPID as String] as? pid_t,
                 ownerPID > 0,
                 let layer = dictionary[kCGWindowLayer as String] as? Int,
-                let boundsDictionary = dictionary[kCGWindowBounds as String] as? NSDictionary,
+                let boundsDictionary = dictionary[kCGWindowBounds as String]
+                    as? NSDictionary,
                 let bounds = CGRect(
                     dictionaryRepresentation: boundsDictionary as CFDictionary
                 )
@@ -143,7 +150,8 @@ final class WindowCollector {
 
             let title = (dictionary[kCGWindowName as String] as? String)?
                 .trimmingCharacters(in: .whitespacesAndNewlines)
-            let ownerName = (dictionary[kCGWindowOwnerName as String] as? String) ?? ""
+            let ownerName =
+                (dictionary[kCGWindowOwnerName as String] as? String) ?? ""
             let isLikelyUserWindow = self.isLikelyUserWindow(
                 title: title,
                 ownerName: ownerName,
@@ -156,7 +164,8 @@ final class WindowCollector {
                 ownerPID: ownerPID,
                 layer: layer,
                 isOnscreen:
-                    (dictionary[kCGWindowIsOnscreen as String] as? Bool) ?? false,
+                    (dictionary[kCGWindowIsOnscreen as String] as? Bool)
+                        ?? false,
                 alpha:
                     (dictionary[kCGWindowAlpha as String] as? Double) ?? 1,
                 bounds: bounds,
@@ -387,7 +396,10 @@ final class WindowCollector {
         return true
     }
 
-    private func isLikelySystemBarWindow(title: String?, bounds: CGRect) -> Bool {
+    private func isLikelySystemBarWindow(
+        title: String?,
+        bounds: CGRect
+    ) -> Bool {
         guard title?.isEmpty != false, bounds.height <= 80 else {
             return false
         }
@@ -398,12 +410,16 @@ final class WindowCollector {
     }
 
     private func uniqueAXWindows(_ windows: [AXUIElement]) -> [AXUIElement] {
-        var seen = Set<CFHashCode>()
+        var buckets: [CFHashCode: [AXUIElement]] = [:]
         var unique: [AXUIElement] = []
 
         for window in windows {
             let hash = CFHash(window)
-            guard seen.insert(hash).inserted else { continue }
+            let isDuplicate = buckets[hash, default: []].contains {
+                CFEqual($0, window)
+            }
+            guard !isDuplicate else { continue }
+            buckets[hash, default: []].append(window)
             unique.append(window)
         }
 
