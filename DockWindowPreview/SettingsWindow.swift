@@ -220,7 +220,7 @@ private final class SettingsContentController {
             title: "桌面窗口红绿灯",
             symbolName: "macwindow",
             views: [
-                YSettingUI.row(title: "鼠标进入左上区域后显示", trailingView: trafficLightRevealSwitch),
+                YSettingUI.row(title: "鼠标进入左上区域后显示增强按钮", trailingView: trafficLightRevealSwitch),
                 YSettingUI.row(title: "悬浮单颗按钮时放大", trailingView: trafficLightHoverEnlargementSwitch),
                 YSettingUI.sliderRow(
                     title: "悬浮目标大小",

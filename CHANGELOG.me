@@ -7,10 +7,18 @@
 ## 2026-07-23
 
 - 准备修正版 `v1.1.23 (48)`：纠正 v1.1.21/v1.1.22 对需求范围的误解，Dock 悬浮预览卡片恢复到 v1.1.20 的原有控制按钮行为；隐藏、单颗 hover 放大和红钮退出策略仅作用于桌面上其他 App 的真实普通窗口，不再修改 `PreviewPanel`。
-- 新增 `DesktopWindowControlsController`：使用公开 CoreGraphics 与 Accessibility API 对可见普通窗口做 explicit window ID 优先、标题/几何歧义保守跳过的一对一匹配，在真实红黄绿位置叠加 Y-Dock 自有 nonactivating panel。支持进入左上区域后显示、只放大最近的单颗按钮、红钮关闭窗口或按全部/黑名单/白名单 graceful terminate、黄钮最小化、绿钮全屏或缩放；桌面策略不调用 `forceTerminate()`。
+- 新增 `DesktopWindowControlsController`：使用公开 CoreGraphics 与 Accessibility API，依据标准 role/subrole、标题、位置、尺寸和按钮属性对可见普通窗口做歧义保守跳过的一对一匹配，在真实红黄绿位置叠加 Y-Dock 自有 nonactivating panel。支持进入左上区域后显示、只放大最近的单颗按钮、红钮关闭窗口或按全部/黑名单/白名单 graceful terminate、黄钮最小化、绿钮全屏或缩放；桌面策略不调用 `forceTerminate()`。
 - 桌面 overlay 增加多屏 Quartz 坐标换算、Space/激活/拖动/松开刷新、重叠 hit area 最近中心判定、mouse-down/mouse-up 同按钮复核和 action 前 fresh descriptor 校验。窗口已移动、身份变化、离屏、全屏或 AX/CG 匹配不再可靠时取消本次动作，不对旧 AX 元素执行操作。
 - Dock 点击最小化改用 timestamped pre-click topmost 快照、启动/设置启用时证据预热、严格 `AXDockItem / AXApplicationDockItem` 命中和批量 AXWindow 一次性认领；只有点击前已前台且目标普通窗口同时通过当前与点击前 topmost 证据时才最小化，后台 App 或被其他普通窗口覆盖时保留系统原生行为。
 - `v1.1.23 (48)` 无签名预验证通过：arm64/x86_64 Debug 与 Release 使用独立 `/tmp` DerivedData 构建成功，主可执行文件分别确认为严格 thin 且 Info.plist 均为 `1.1.23 (48)`；arm64 `xcodebuild analyze` 通过，AppSettings/policy 与 updater asset selector standalone 测试分别以 arm64、x86_64 编译运行全部通过。设置 preview 模式现在跳过权限引导、窗口跟踪器和更新检查，功能页截图确认“桌面窗口红绿灯”、单颗放大尺寸预览和 Dock 点击设置布局正常，临时预览进程已主动结束。
+- 根据用户进一步明确的视觉要求，移除覆盖三颗按钮区域的 `NSVisualEffectView`、圆角矩形和任何共享背景；参考 Traffic Lights+ 公开实现后改为每个匹配窗口三颗相互独立的透明 nonactivating `NSPanel`，只绘制按钮圆形本身。统一最近中心判定确保重叠的 `38pt` 命中范围只让当前单颗 panel 接收事件，悬浮红、黄、绿时分别只有目标按钮放大到设置尺寸，移出左上控制区域后全部增强 panel `orderOut`。
+- 独立按钮 panel 使用 `.floating` 与 `orderFrontRegardless()` 以接收真实点击，同时按 WindowServer 前后顺序对每颗完整命中 frame 单独做遮挡过滤；普通前层窗口、正规 App 的浮动 panel 以及 Y-Dock 自身非增强窗口遮住按钮时不绘制后层增强圆。两个重叠 Probe 窗口验证只显示前层窗口的三颗按钮，没有矩形遮罩或后层按钮穿透。
+- 真实交互验证黄色按钮最小化窗口、红色按钮关闭单一窗口，以及按策略仅调用 `NSRunningApplication.terminate()` 正常退出所属 App。发现部分 App 的绿色 AX zoom button 对 `AXPress` 返回成功但不执行缩放后，改为先移除独立 panel，再向原生绿色按钮中心转发公开 CGEvent；受控窗口已验证从 `520×388` 缩放到 `1920×1201` 并可恢复。
+- 只读审查进一步修复两处竞态：拖动或 App/Space 切换期间的新刷新请求会使正在后台扫描的 descriptor generation 过期，旧坐标不再先上屏；绿色原生事件在真正发送 mouse-down 前重新确认 AX 按钮中心未移动且目标 CGWindow 仍是该点最上层合格窗口，并在 mouse-up 与窗口动画完成前抑制该窗口 panel 重建。受控竞态测试在 mouse-up 后、延迟转发前激活覆盖窗口，目标 Probe 保持原尺寸，确认未误点覆盖窗口。
+- 接手后的第二轮只读审查补齐持续遮挡边界：普通 App 与 accessory App 的浮动窗口均参与遮挡；Dock/Notification Center 仅按单个 WindowServer 记录的全屏覆盖几何跳过系统 bookkeeping surface，不再按 bundle 整体排除。绿色转发除 CGWindow 最上层复核外，再用公开 `AXUIElementCopyElementAtPosition` 确认原生按钮仍是系统级 AX hit target；mouse-down 一旦发出则保证配对 mouse-up，避免原生控件停留在按下状态。
+- descriptor 完成时新增当前 CGWindow owner/坐标/尺寸复核，约 30 Hz 的可见 panel 遮挡循环也会立即隐藏已经程序化移动的旧坐标 panel；外部 mouse-down/drag 期间停止 descriptor 重建，直到 mouse-up 才恢复。受控测试确认：窗口移动后旧 panel 在约 `70ms` 内从 3 颗降为 0、约 `770ms` 后在新位置恢复；持续按住外部鼠标期间四次采样均为 0；绿色延迟期间移动目标或显示 accessory 浮动遮挡窗口均取消缩放。
+- WindowServer 热态基准 600 次采样的组合调用平均约 `0.48ms`、p95 约 `0.61ms`；遮挡轮询改为仅在至少一颗增强按钮应显示时使用约 30 Hz，无可见增强按钮时回落到 `0.45s` 常规刷新。设置功能页截图确认“鼠标进入左上区域后显示增强按钮”完整显示且未截断。当前测试环境仅检测到一块物理显示器，多显示器换算仍由 `NSScreenNumber` 与 `CGDisplayBounds` 的公开路径覆盖，本轮未把单屏结果冒充为多屏实机验证。
+- 上述源码变化发生在此前签名、公证产物生成之后，因此旧 `/tmp/Y-Dock-release-v1.1.23` 双架构 DMG 已明确作废，不得上传、复用或作为最终验证依据；正式发布必须从最终提交重新完整运行 `release.sh`。
 
 - 准备修复版 `v1.1.22 (47)`：修复预览卡片左上局部 tracking 在标题/icon 子视图路径下无法可靠更新的问题。改用固定左上区域的专用 tracking view 作为真实 hit-test target，控制按钮保持在其上层，空白区域 mouse-down 继续转发为卡片选择；真实指针验证中央区域保持隐藏、进入左上后显示，紫色与红色按钮可分别放大到设置的 `30pt` 并完成点击。
 - 受控双窗口 Probe 确认红色按钮进入 `NSRunningApplication.terminate()` graceful quit，日志依次记录 termination request 与 will-terminate，未在策略路径使用强制终止；此前短等待内进程仍存活属于异步正常退出时序。

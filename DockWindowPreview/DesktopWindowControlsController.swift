@@ -7,19 +7,48 @@ import QuartzCore
 final class DesktopWindowControlsController {
     private enum RefreshTiming {
         static let timerInterval: TimeInterval = 0.45
+        static let panelOcclusionInterval: TimeInterval = 1.0 / 30.0
         static let minimumRefreshInterval: CFTimeInterval = 0.16
         static let actionRefreshDelay: TimeInterval = 0.12
+        static let nativeClickDownDelay: TimeInterval = 0.08
+        static let nativeClickUpDelay: TimeInterval = 0.05
+        static let nativeClickRefreshDelay: TimeInterval = 0.24
+    }
+
+    private enum OcclusionPolicy {
+        // These accessory processes publish full-display bookkeeping windows
+        // even when no visible surface covers the traffic-light point.
+        static let systemBookkeepingBundleIdentifiers: Set<String> = [
+            "com.apple.dock",
+            "com.apple.notificationcenterui"
+        ]
+    }
+
+    private struct OcclusionApplicationState {
+        var participantPIDs = Set<pid_t>()
+        var systemBookkeepingPIDs = Set<pid_t>()
     }
 
     private let settings: AppSettings
+    private let descriptorRefreshQueue = DispatchQueue(
+        label: "com.ydock.desktop-window-controls",
+        qos: .userInitiated
+    )
     private var isRunning = false
     private var refreshTimer: Timer?
+    private var panelOcclusionTimer: Timer?
     private var pendingRefreshWorkItem: DispatchWorkItem?
     private var lastRefreshTimestamp: CFTimeInterval = 0
+    private var lastPanelOcclusionTimestamp: CFTimeInterval = 0
+    private var descriptorRefreshGeneration = 0
+    private var isDescriptorRefreshInProgress = false
+    private var shouldRefreshAfterCurrentDescriptorPass = false
     private var globalMouseMonitor: Any?
     private var localMouseMonitor: Any?
     private var notificationObservers: [NSObjectProtocol] = []
     private var panelsByWindowID: [CGWindowID: DesktopTrafficLightPanel] = [:]
+    private var nativeClickSuppressedWindowIDs = Set<CGWindowID>()
+    private var externalMouseButtonsDown = Set<Int>()
 
     init(settings: AppSettings = .shared) {
         self.settings = settings
@@ -57,12 +86,17 @@ final class DesktopWindowControlsController {
 
         guard isRunning else { return }
         isRunning = false
+        descriptorRefreshGeneration += 1
+        shouldRefreshAfterCurrentDescriptorPass = false
 
         pendingRefreshWorkItem?.cancel()
         pendingRefreshWorkItem = nil
 
         refreshTimer?.invalidate()
         refreshTimer = nil
+        panelOcclusionTimer?.invalidate()
+        panelOcclusionTimer = nil
+        lastPanelOcclusionTimestamp = 0
 
         if let globalMouseMonitor {
             NSEvent.removeMonitor(globalMouseMonitor)
@@ -81,11 +115,16 @@ final class DesktopWindowControlsController {
         notificationObservers.removeAll()
 
         removeAllPanels()
+        nativeClickSuppressedWindowIDs.removeAll()
+        externalMouseButtonsDown.removeAll()
     }
 
     private func installMouseMonitors() {
         let mask: NSEvent.EventTypeMask = [
             .mouseMoved,
+            .leftMouseDown,
+            .rightMouseDown,
+            .otherMouseDown,
             .leftMouseDragged,
             .rightMouseDragged,
             .otherMouseDragged,
@@ -109,16 +148,56 @@ final class DesktopWindowControlsController {
     }
 
     private func handleMouseEvent(_ event: NSEvent) {
-        updatePanelsForCurrentMouseLocation()
+        updatePanels(at: screenLocation(for: event))
 
         switch event.type {
+        case .leftMouseDown, .rightMouseDown, .otherMouseDown:
+            if isOverlayPanelEvent(event) {
+                refreshPanelOcclusionStates(force: true)
+            } else {
+                beginExternalMouseInteraction(buttonNumber: event.buttonNumber)
+            }
         case .leftMouseDragged, .rightMouseDragged, .otherMouseDragged:
-            scheduleRefresh(immediate: false)
+            if !isOverlayPanelEvent(event) {
+                beginExternalMouseInteraction(buttonNumber: event.buttonNumber)
+            }
         case .leftMouseUp, .rightMouseUp, .otherMouseUp:
-            scheduleRefresh(immediate: true)
+            if !isOverlayPanelEvent(event) {
+                removeAllPanels()
+                externalMouseButtonsDown.remove(event.buttonNumber)
+                if NSEvent.pressedMouseButtons == 0 {
+                    externalMouseButtonsDown.removeAll()
+                }
+                if externalMouseButtonsDown.isEmpty {
+                    scheduleRefresh(
+                        immediate: true,
+                        invalidatesCurrentPass: true
+                    )
+                }
+            } else {
+                scheduleRefresh(immediate: true)
+            }
+        case .mouseMoved:
+            refreshPanelOcclusionStates()
         default:
             break
         }
+    }
+
+    private func isOverlayPanelEvent(_ event: NSEvent) -> Bool {
+        event.window is DesktopTrafficLightButtonPanel
+    }
+
+    private func beginExternalMouseInteraction(buttonNumber: Int) {
+        let wasInactive = externalMouseButtonsDown.isEmpty
+        externalMouseButtonsDown.insert(buttonNumber)
+        removeAllPanels()
+
+        guard wasInactive else { return }
+        descriptorRefreshGeneration += 1
+        shouldRefreshAfterCurrentDescriptorPass = false
+        pendingRefreshWorkItem?.cancel()
+        pendingRefreshWorkItem = nil
     }
 
     private func installObservers() {
@@ -136,7 +215,9 @@ final class DesktopWindowControlsController {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.scheduleRefresh(immediate: true)
+            guard let self else { return }
+            self.removeAllPanels()
+            self.scheduleRefresh(immediate: true)
         })
 
         notificationObservers.append(workspaceCenter.addObserver(
@@ -144,7 +225,12 @@ final class DesktopWindowControlsController {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.scheduleRefresh(immediate: false)
+            guard let self else { return }
+            self.removeAllPanels()
+            self.scheduleRefresh(
+                immediate: false,
+                invalidatesCurrentPass: true
+            )
         })
 
         notificationObservers.append(NotificationCenter.default.addObserver(
@@ -162,10 +248,29 @@ final class DesktopWindowControlsController {
         }
         RunLoop.main.add(timer, forMode: .common)
         refreshTimer = timer
+
+        let occlusionTimer = Timer(
+            timeInterval: RefreshTiming.panelOcclusionInterval,
+            repeats: true
+        ) { [weak self] _ in
+            self?.refreshPanelOcclusionStates()
+        }
+        RunLoop.main.add(occlusionTimer, forMode: .common)
+        panelOcclusionTimer = occlusionTimer
     }
 
-    private func scheduleRefresh(immediate: Bool) {
+    private func scheduleRefresh(
+        immediate: Bool,
+        invalidatesCurrentPass: Bool = false
+    ) {
         guard isRunning else { return }
+        guard externalMouseButtonsDown.isEmpty else { return }
+
+        if isDescriptorRefreshInProgress,
+            immediate || invalidatesCurrentPass {
+            descriptorRefreshGeneration += 1
+            shouldRefreshAfterCurrentDescriptorPass = true
+        }
 
         let now = CACurrentMediaTime()
         let delay: TimeInterval
@@ -191,42 +296,179 @@ final class DesktopWindowControlsController {
         guard isRunning else { return }
         pendingRefreshWorkItem = nil
         lastRefreshTimestamp = CACurrentMediaTime()
-
-        guard settings.requiresDesktopTrafficLightOverlay, AXIsProcessTrusted() else {
+        guard externalMouseButtonsDown.isEmpty else {
             removeAllPanels()
             return
         }
 
-        let descriptors = collectOverlayDescriptors()
-        let visibleWindowIDs = Set(descriptors.map(\.windowID))
+        guard settings.requiresDesktopTrafficLightOverlay, AXIsProcessTrusted() else {
+            descriptorRefreshGeneration += 1
+            shouldRefreshAfterCurrentDescriptorPass = false
+            removeAllPanels()
+            return
+        }
 
-        for windowID in Array(panelsByWindowID.keys) where !visibleWindowIDs.contains(windowID) {
+        guard !isDescriptorRefreshInProgress else {
+            shouldRefreshAfterCurrentDescriptorPass = true
+            return
+        }
+
+        let coordinateMapper = DesktopScreenCoordinateMapper()
+        let candidates = collectVisibleCGWindowCandidates(
+            coordinateMapper: coordinateMapper
+        )
+        let generation = descriptorRefreshGeneration
+        isDescriptorRefreshInProgress = true
+
+        descriptorRefreshQueue.async { [weak self] in
+            guard let self else { return }
+            let descriptors = self.collectOverlayDescriptors(
+                candidates: candidates,
+                coordinateMapper: coordinateMapper
+            )
+            DispatchQueue.main.async { [weak self] in
+                self?.finishDescriptorRefresh(
+                    descriptors,
+                    generation: generation
+                )
+            }
+        }
+    }
+
+    private func finishDescriptorRefresh(
+        _ descriptors: [DesktopOverlayDescriptor],
+        generation: Int
+    ) {
+        isDescriptorRefreshInProgress = false
+
+        guard isRunning else {
+            shouldRefreshAfterCurrentDescriptorPass = false
+            return
+        }
+
+        guard externalMouseButtonsDown.isEmpty else {
+            shouldRefreshAfterCurrentDescriptorPass = false
+            return
+        }
+
+        guard generation == descriptorRefreshGeneration else {
+            let shouldRefresh = shouldRefreshAfterCurrentDescriptorPass
+                && settings.requiresDesktopTrafficLightOverlay
+                && AXIsProcessTrusted()
+            shouldRefreshAfterCurrentDescriptorPass = false
+            if shouldRefresh {
+                scheduleRefresh(immediate: true)
+            }
+            return
+        }
+
+        let currentWindowGeometries =
+            currentVisibleCGWindowGeometries() ?? [:]
+        let activeDescriptors = descriptors.filter { descriptor in
+            guard
+                !nativeClickSuppressedWindowIDs.contains(
+                    descriptor.windowID
+                ),
+                let geometry = currentWindowGeometries[
+                    descriptor.windowID
+                ],
+                geometry.ownerPID == descriptor.ownerPID
+            else {
+                return false
+            }
+            return rect(
+                geometry.topLeftBounds,
+                isWithin: 1.5,
+                of: descriptor.windowTopLeftBounds
+            )
+        }
+        let visibleWindowIDs = Set(activeDescriptors.map(\.windowID))
+
+        for windowID in Array(panelsByWindowID.keys)
+            where !visibleWindowIDs.contains(windowID) {
             panelsByWindowID[windowID]?.closePanel()
             panelsByWindowID.removeValue(forKey: windowID)
         }
 
-        for descriptor in descriptors {
-            let panel = panelsByWindowID[descriptor.windowID] ?? makePanel(for: descriptor.windowID)
+        for descriptor in activeDescriptors {
+            let panel = panelsByWindowID[descriptor.windowID]
+                ?? makePanel(for: descriptor.windowID)
             panel.configure(
                 descriptor: descriptor,
                 targetDiameter: targetButtonDiameter,
                 revealOnHover: settings.desktopTrafficLightsRevealOnHover,
-                hoverEnlargementEnabled: settings.desktopTrafficLightHoverEnlargementEnabled
+                hoverEnlargementEnabled:
+                    settings.desktopTrafficLightHoverEnlargementEnabled
             )
             panel.order(.above, relativeTo: Int(descriptor.windowID))
             panelsByWindowID[descriptor.windowID] = panel
         }
 
-        updatePanelsForCurrentMouseLocation()
+        // `configure` resets the active buttons before the next timer tick.
+        // Re-evaluate WindowServer order in the same run-loop pass so a
+        // newly configured back-window panel never flashes above its cover.
+        refreshPanelOcclusionStates(force: true)
+
+        if shouldRefreshAfterCurrentDescriptorPass {
+            shouldRefreshAfterCurrentDescriptorPass = false
+            scheduleRefresh(immediate: true)
+        }
     }
 
     private func makePanel(for windowID: CGWindowID) -> DesktopTrafficLightPanel {
         let panel = DesktopTrafficLightPanel()
-        panel.onButtonPressed = { [weak self] kind, targetWindowID in
-            self?.performAction(kind, forWindowID: targetWindowID)
+        panel.onButtonPressed = { [weak self] kind, targetWindowID, screenPoint in
+            self?.performAction(
+                kind,
+                forWindowID: targetWindowID,
+                atScreenPoint: screenPoint
+            )
         }
         panelsByWindowID[windowID] = panel
         return panel
+    }
+
+    private func currentVisibleCGWindowGeometries()
+        -> [CGWindowID: DesktopCGWindowGeometry]? {
+        let options: CGWindowListOption = [
+            .optionOnScreenOnly,
+            .excludeDesktopElements
+        ]
+        guard let rawWindows = CGWindowListCopyWindowInfo(
+            options,
+            kCGNullWindowID
+        ) as? [[String: Any]] else {
+            return nil
+        }
+
+        var geometries: [CGWindowID: DesktopCGWindowGeometry] = [:]
+        for dictionary in rawWindows {
+            guard
+                let ownerPID = dictionary[kCGWindowOwnerPID as String]
+                    as? pid_t,
+                let windowID = dictionary[kCGWindowNumber as String]
+                    as? CGWindowID,
+                let layer = dictionary[kCGWindowLayer as String] as? Int,
+                layer == 0,
+                (dictionary[kCGWindowIsOnscreen as String] as? Bool) == true,
+                ((dictionary[kCGWindowAlpha as String] as? Double) ?? 1)
+                    > 0.01,
+                let boundsDictionary = dictionary[
+                    kCGWindowBounds as String
+                ] as? NSDictionary,
+                let topLeftBounds = CGRect(
+                    dictionaryRepresentation:
+                        boundsDictionary as CFDictionary
+                )
+            else {
+                continue
+            }
+            geometries[windowID] = DesktopCGWindowGeometry(
+                ownerPID: ownerPID,
+                topLeftBounds: topLeftBounds
+            )
+        }
+        return geometries
     }
 
     private func removeAllPanels() {
@@ -235,8 +477,11 @@ final class DesktopWindowControlsController {
     }
 
     private func updatePanelsForCurrentMouseLocation() {
+        updatePanels(at: NSEvent.mouseLocation)
+    }
+
+    private func updatePanels(at mouseLocation: NSPoint) {
         guard isRunning else { return }
-        let mouseLocation = NSEvent.mouseLocation
         for panel in panelsByWindowID.values {
             panel.updateMouseLocation(
                 mouseLocation,
@@ -247,13 +492,181 @@ final class DesktopWindowControlsController {
         }
     }
 
+    private func currentOcclusionApplicationState()
+        -> OcclusionApplicationState {
+        var state = OcclusionApplicationState()
+        for application in NSWorkspace.shared.runningApplications
+            where applicationParticipatesInOcclusion(application) {
+            state.participantPIDs.insert(application.processIdentifier)
+            if
+                let bundleIdentifier = application.bundleIdentifier,
+                OcclusionPolicy.systemBookkeepingBundleIdentifiers.contains(
+                    bundleIdentifier
+                )
+            {
+                state.systemBookkeepingPIDs.insert(
+                    application.processIdentifier
+                )
+            }
+        }
+        return state
+    }
+
+    private func applicationParticipatesInOcclusion(
+        _ application: NSRunningApplication?
+    ) -> Bool {
+        guard let application, !application.isTerminated else {
+            return false
+        }
+        guard application.activationPolicy == .regular
+            || application.activationPolicy == .accessory else {
+            return false
+        }
+        return true
+    }
+
+    private func windowParticipatesInOcclusion(
+        ownerPID: pid_t,
+        layer: Int,
+        topLeftBounds: CGRect,
+        currentPID: pid_t,
+        applicationState: OcclusionApplicationState,
+        coordinateMapper: DesktopScreenCoordinateMapper
+    ) -> Bool {
+        let participates = layer == 0
+            || applicationState.participantPIDs.contains(ownerPID)
+            || ownerPID == currentPID
+        guard participates else { return false }
+
+        let isFullDisplaySystemBookkeepingWindow = layer != 0
+            && applicationState.systemBookkeepingPIDs.contains(ownerPID)
+            && coordinateMapper.nearlyCoversTopLeftScreen(topLeftBounds)
+        return !isFullDisplaySystemBookkeepingWindow
+    }
+
+    private func refreshPanelOcclusionStates(force: Bool = false) {
+        guard isRunning, !panelsByWindowID.isEmpty else { return }
+
+        let now = CACurrentMediaTime()
+        let hasVisibleEnhancement = panelsByWindowID.values.contains {
+            $0.hasVisibleButtons
+        }
+        let requiredInterval = hasVisibleEnhancement
+            ? RefreshTiming.panelOcclusionInterval
+            : RefreshTiming.timerInterval
+        guard force
+            || now - lastPanelOcclusionTimestamp
+                >= requiredInterval else {
+            return
+        }
+        lastPanelOcclusionTimestamp = now
+
+        let currentPID = ProcessInfo.processInfo.processIdentifier
+        let overlayWindowIDs = Set(
+            panelsByWindowID.values.flatMap(\.windowIDs)
+        )
+        let applicationState = currentOcclusionApplicationState()
+        let coordinateMapper = DesktopScreenCoordinateMapper()
+        let options: CGWindowListOption = [
+            .optionOnScreenOnly,
+            .excludeDesktopElements
+        ]
+        guard let rawWindows = CGWindowListCopyWindowInfo(
+            options,
+            kCGNullWindowID
+        ) as? [[String: Any]] else {
+            panelsByWindowID.values.forEach {
+                $0.setUnoccludedKinds([])
+            }
+            updatePanelsForCurrentMouseLocation()
+            return
+        }
+
+        var coveringTopLeftFrames: [CGRect] = []
+        var unoccludedKindsByWindowID:
+            [CGWindowID: Set<DesktopTrafficLightKind>] = [:]
+
+        for dictionary in rawWindows {
+            guard
+                let ownerPID = dictionary[kCGWindowOwnerPID as String]
+                    as? pid_t,
+                let windowID = dictionary[kCGWindowNumber as String]
+                    as? CGWindowID,
+                let layer = dictionary[kCGWindowLayer as String] as? Int,
+                (dictionary[kCGWindowIsOnscreen as String] as? Bool) == true,
+                ((dictionary[kCGWindowAlpha as String] as? Double) ?? 1)
+                    > 0.01,
+                let boundsDictionary = dictionary[kCGWindowBounds as String]
+                    as? NSDictionary,
+                let topLeftBounds = CGRect(
+                    dictionaryRepresentation: boundsDictionary as CFDictionary
+                ),
+                topLeftBounds.width > 0,
+                topLeftBounds.height > 0
+            else {
+                continue
+            }
+
+            if ownerPID == currentPID,
+                overlayWindowIDs.contains(windowID) {
+                continue
+            }
+
+            guard windowParticipatesInOcclusion(
+                ownerPID: ownerPID,
+                layer: layer,
+                topLeftBounds: topLeftBounds,
+                currentPID: currentPID,
+                applicationState: applicationState,
+                coordinateMapper: coordinateMapper
+            ) else {
+                continue
+            }
+
+            if let descriptor = panelsByWindowID[windowID]?.descriptor {
+                let geometryIsCurrent = rect(
+                    topLeftBounds,
+                    isWithin: 1.5,
+                    of: descriptor.windowTopLeftBounds
+                )
+                let kinds: [DesktopTrafficLightKind] = descriptor.buttons
+                    .compactMap { button -> DesktopTrafficLightKind? in
+                        guard geometryIsCurrent else { return nil }
+                        return coveringTopLeftFrames.contains(where: {
+                            $0.intersects(button.topLeftHitRect)
+                        }) ? nil : button.kind
+                    }
+                unoccludedKindsByWindowID[windowID] = Set(kinds)
+            }
+
+            coveringTopLeftFrames.append(topLeftBounds)
+        }
+
+        for (windowID, panel) in panelsByWindowID {
+            panel.setUnoccludedKinds(
+                unoccludedKindsByWindowID[windowID] ?? []
+            )
+        }
+        updatePanelsForCurrentMouseLocation()
+    }
+
+    private func screenLocation(for event: NSEvent) -> NSPoint {
+        guard let topLeftPoint = event.cgEvent?.location else {
+            return NSEvent.mouseLocation
+        }
+        return DesktopScreenCoordinateMapper()
+            .appKitPoint(fromTopLeftPoint: topLeftPoint)
+            ?? NSEvent.mouseLocation
+    }
+
     private var targetButtonDiameter: CGFloat {
         DesktopTrafficLightLayout.clampButtonDiameter(CGFloat(settings.desktopTrafficLightHoverTargetSize))
     }
 
-    private func collectOverlayDescriptors() -> [DesktopOverlayDescriptor] {
-        let coordinateMapper = DesktopScreenCoordinateMapper()
-        let candidates = collectVisibleCGWindowCandidates(coordinateMapper: coordinateMapper)
+    private func collectOverlayDescriptors(
+        candidates: [DesktopCGWindowCandidate],
+        coordinateMapper: DesktopScreenCoordinateMapper
+    ) -> [DesktopOverlayDescriptor] {
         guard !candidates.isEmpty else { return [] }
 
         var snapshotsByPID: [pid_t: [DesktopAXWindowSnapshot]] = [:]
@@ -268,7 +681,11 @@ final class DesktopWindowControlsController {
             if let cached = snapshotsByPID[candidate.ownerPID] {
                 snapshots = cached
             } else {
-                let loaded = loadAXWindowSnapshots(for: candidate.runningApplication, coordinateMapper: coordinateMapper)
+                let loaded = loadAXWindowSnapshots(
+                    ownerPID: candidate.ownerPID,
+                    fallbackTitle: candidate.ownerName,
+                    coordinateMapper: coordinateMapper
+                )
                 snapshotsByPID[candidate.ownerPID] = loaded
                 snapshots = loaded
             }
@@ -280,7 +697,10 @@ final class DesktopWindowControlsController {
                 continue
             }
 
-            guard !isLikelyFullScreen(candidate: candidate, axWindow: matchedSnapshot) else {
+            guard !isLikelyFullScreen(
+                candidate: candidate,
+                coordinateMapper: coordinateMapper
+            ) else {
                 continue
             }
 
@@ -302,7 +722,12 @@ final class DesktopWindowControlsController {
     private func collectVisibleCGWindowCandidates(coordinateMapper: DesktopScreenCoordinateMapper) -> [DesktopCGWindowCandidate] {
         let currentPID = ProcessInfo.processInfo.processIdentifier
         let currentBundleIdentifier = Bundle.main.bundleIdentifier
+        let overlayWindowIDs = Set(
+            panelsByWindowID.values.flatMap(\.windowIDs)
+        )
         let runningApps = Dictionary(uniqueKeysWithValues: NSWorkspace.shared.runningApplications.map { ($0.processIdentifier, $0) })
+        let occlusionApplicationState =
+            currentOcclusionApplicationState()
         let options: CGWindowListOption = [.optionOnScreenOnly, .excludeDesktopElements]
         let rawWindows = CGWindowListCopyWindowInfo(options, kCGNullWindowID) as? [[String: Any]]
 
@@ -312,19 +737,14 @@ final class DesktopWindowControlsController {
 
         var candidates: [DesktopCGWindowCandidate] = []
         var seenWindowIDs = Set<CGWindowID>()
+        var coveringTopLeftFrames: [CGRect] = []
 
         for dictionary in rawWindows ?? [] {
             guard
                 let ownerPID = dictionary[kCGWindowOwnerPID as String] as? pid_t,
-                ownerPID != currentPID,
-                let app = runningApps[ownerPID],
-                app.activationPolicy == .regular,
-                !app.isTerminated,
-                app.bundleIdentifier != currentBundleIdentifier,
                 let windowID = dictionary[kCGWindowNumber as String] as? CGWindowID,
                 !seenWindowIDs.contains(windowID),
                 let layer = dictionary[kCGWindowLayer as String] as? Int,
-                layer == 0,
                 (dictionary[kCGWindowIsOnscreen as String] as? Bool) == true
             else {
                 continue
@@ -335,20 +755,57 @@ final class DesktopWindowControlsController {
 
             guard
                 let boundsDictionary = dictionary[kCGWindowBounds as String] as? NSDictionary,
-                let topLeftBounds = CGRect(dictionaryRepresentation: boundsDictionary as CFDictionary),
-                topLeftBounds.width >= 80,
-                topLeftBounds.height >= 60,
-                let appKitBounds = coordinateMapper.appKitRect(fromTopLeftRect: topLeftBounds),
-                visibleArea(of: appKitBounds) >= 1600
+                let topLeftBounds = CGRect(
+                    dictionaryRepresentation: boundsDictionary as CFDictionary
+                ),
+                topLeftBounds.width > 0,
+                topLeftBounds.height > 0
             else {
                 continue
             }
 
-            let rawTitle = (dictionary[kCGWindowName as String] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
-            let ownerName = (dictionary[kCGWindowOwnerName as String] as? String) ?? app.localizedName ?? "Unknown App"
+            seenWindowIDs.insert(windowID)
+            if ownerPID == currentPID, overlayWindowIDs.contains(windowID) {
+                continue
+            }
+
+            let app = runningApps[ownerPID]
+            let framesAboveWindow = coveringTopLeftFrames
+            if windowParticipatesInOcclusion(
+                ownerPID: ownerPID,
+                layer: layer,
+                topLeftBounds: topLeftBounds,
+                currentPID: currentPID,
+                applicationState: occlusionApplicationState,
+                coordinateMapper: coordinateMapper
+            ) {
+                coveringTopLeftFrames.append(topLeftBounds)
+            }
+
+            guard
+                ownerPID != currentPID,
+                layer == 0,
+                let app,
+                app.activationPolicy == .regular,
+                !app.isTerminated,
+                app.bundleIdentifier != currentBundleIdentifier,
+                topLeftBounds.width >= 80,
+                topLeftBounds.height >= 60,
+                let appKitBounds = coordinateMapper.appKitRect(
+                    fromTopLeftRect: topLeftBounds
+                ),
+                coordinateMapper.visibleArea(of: appKitBounds) >= 1600
+            else {
+                continue
+            }
+
+            let rawTitle = (dictionary[kCGWindowName as String] as? String)?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            let ownerName = (dictionary[kCGWindowOwnerName as String] as? String)
+                ?? app.localizedName
+                ?? "Unknown App"
             let displayTitle = rawTitle?.isEmpty == false ? rawTitle! : ownerName
 
-            seenWindowIDs.insert(windowID)
             candidates.append(DesktopCGWindowCandidate(
                 windowID: windowID,
                 ownerPID: ownerPID,
@@ -356,7 +813,8 @@ final class DesktopWindowControlsController {
                 title: displayTitle,
                 topLeftBounds: topLeftBounds,
                 appKitBounds: appKitBounds,
-                runningApplication: app
+                bundleIdentifier: app.bundleIdentifier,
+                coveringTopLeftFrames: framesAboveWindow
             ))
         }
 
@@ -364,15 +822,25 @@ final class DesktopWindowControlsController {
     }
 
     private func loadAXWindowSnapshots(
-        for app: NSRunningApplication,
+        ownerPID: pid_t,
+        fallbackTitle: String,
         coordinateMapper: DesktopScreenCoordinateMapper
     ) -> [DesktopAXWindowSnapshot] {
-        let appElement = AXUIElementCreateApplication(app.processIdentifier)
-        let axWindows = attribute(appElement, kAXWindowsAttribute) as [AXUIElement]? ?? []
+        let appElement = AXUIElementCreateApplication(ownerPID)
+        AXUIElementSetMessagingTimeout(
+            appElement,
+            DesktopAXMessaging.requestTimeout
+        )
+        let axWindows = attribute(appElement, kAXWindowsAttribute)
+            as [AXUIElement]? ?? []
         let uniqueWindows = uniqueAXWindows(axWindows)
         var snapshots: [DesktopAXWindowSnapshot] = []
 
         for axWindow in uniqueWindows {
+            AXUIElementSetMessagingTimeout(
+                axWindow,
+                DesktopAXMessaging.requestTimeout
+            )
             guard isStandardAXWindow(axWindow) else { continue }
             guard (attribute(axWindow, kAXMinimizedAttribute) as Bool?) != true else { continue }
 
@@ -385,19 +853,16 @@ final class DesktopWindowControlsController {
                 continue
             }
 
-            guard visibleArea(of: appKitFrame) >= 1600 else { continue }
+            guard coordinateMapper.visibleArea(of: appKitFrame) >= 1600 else { continue }
             guard let controls = standardControls(for: axWindow, coordinateMapper: coordinateMapper) else { continue }
 
-            let title = ((attribute(axWindow, kAXTitleAttribute) as String?) ?? app.localizedName ?? "")
+            let title = ((attribute(axWindow, kAXTitleAttribute) as String?) ?? fallbackTitle)
                 .trimmingCharacters(in: .whitespacesAndNewlines)
 
             snapshots.append(DesktopAXWindowSnapshot(
                 element: axWindow,
                 title: title,
                 topLeftFrame: topLeftFrame,
-                appKitFrame: appKitFrame,
-                explicitWindowID: explicitCGWindowID(of: axWindow),
-                isFullScreen: (attribute(axWindow, DesktopAXAttributeNames.fullScreen) as Bool?) == true,
                 controls: controls
             ))
         }
@@ -429,12 +894,12 @@ final class DesktopWindowControlsController {
         let fullScreen = buttonSnapshot(
             kind: .fullScreen,
             window: axWindow,
-            attributeName: DesktopAXAttributeNames.fullScreenButton,
+            attributeName: kAXZoomButtonAttribute,
             coordinateMapper: coordinateMapper
         ) ?? buttonSnapshot(
             kind: .fullScreen,
             window: axWindow,
-            attributeName: kAXZoomButtonAttribute,
+            attributeName: kAXFullScreenButtonAttribute,
             coordinateMapper: coordinateMapper
         )
 
@@ -448,8 +913,19 @@ final class DesktopWindowControlsController {
         attributeName: String,
         coordinateMapper: DesktopScreenCoordinateMapper
     ) -> DesktopAXButtonSnapshot? {
-        guard let element = attribute(window, attributeName) as AXUIElement? else { return nil }
-        guard (attribute(element, DesktopAXAttributeNames.hidden) as Bool?) != true else { return nil }
+        guard let element = attribute(window, attributeName) as AXUIElement? else {
+            return nil
+        }
+        AXUIElementSetMessagingTimeout(
+            element,
+            DesktopAXMessaging.requestTimeout
+        )
+        guard
+            (attribute(element, kAXHiddenAttribute) as Bool?)
+                != true
+        else {
+            return nil
+        }
 
         guard
             let topLeftFrame = frame(of: element),
@@ -480,13 +956,6 @@ final class DesktopWindowControlsController {
 
         for snapshot in snapshots {
             guard !usedAXWindows.containsAXElement(snapshot.element) else { continue }
-
-            if let explicitWindowID = snapshot.explicitWindowID {
-                if explicitWindowID == candidate.windowID {
-                    return snapshot
-                }
-                continue
-            }
 
             let score = windowMatchScore(candidate: candidate, axWindow: snapshot)
             if score > (best?.score ?? 0) {
@@ -676,46 +1145,72 @@ final class DesktopWindowControlsController {
         axWindow: DesktopAXWindowSnapshot
     ) -> DesktopOverlayDescriptor? {
         let fixedHitDiameter = DesktopTrafficLightLayout.fixedHitDiameter
-        var overlayFrame: NSRect?
-
-        let buttons = axWindow.controls.map { button -> DesktopOverlayButton in
-            let center = button.appKitFrame.center
-            let nativeDiameter = max(button.appKitFrame.width, button.appKitFrame.height)
-            let hitDiameter = max(fixedHitDiameter, nativeDiameter + DesktopTrafficLightLayout.hitPadding * 2)
-            let hitRect = NSRect(
-                x: center.x - hitDiameter / 2,
-                y: center.y - hitDiameter / 2,
+        let visibleControls = axWindow.controls.filter { button in
+            let nativeDiameter = max(
+                button.topLeftFrame.width,
+                button.topLeftFrame.height
+            )
+            let hitDiameter = max(
+                fixedHitDiameter,
+                nativeDiameter + DesktopTrafficLightLayout.hitPadding * 2
+            )
+            let hitFrame = CGRect(
+                x: button.topLeftFrame.midX - hitDiameter / 2,
+                y: button.topLeftFrame.midY - hitDiameter / 2,
                 width: hitDiameter,
                 height: hitDiameter
             )
-            overlayFrame = overlayFrame.map { $0.union(hitRect) } ?? hitRect
+            return !candidate.coveringTopLeftFrames.contains {
+                $0.intersects(hitFrame)
+            }
+        }
+        guard !visibleControls.isEmpty else { return nil }
 
+        let buttons = visibleControls.map { button -> DesktopOverlayButton in
+            let center = button.appKitFrame.center
+            let nativeDiameter = max(
+                button.appKitFrame.width,
+                button.appKitFrame.height
+            )
+            let hitDiameter = max(
+                fixedHitDiameter,
+                nativeDiameter + DesktopTrafficLightLayout.hitPadding * 2
+            )
+            let topLeftHitRect = CGRect(
+                x: button.topLeftFrame.midX - hitDiameter / 2,
+                y: button.topLeftFrame.midY - hitDiameter / 2,
+                width: hitDiameter,
+                height: hitDiameter
+            )
             return DesktopOverlayButton(
                 kind: button.kind,
                 actionElement: button.element,
-                nativeFrame: button.appKitFrame,
+                topLeftHitRect: topLeftHitRect,
                 screenCenter: center,
                 hitDiameter: hitDiameter
             )
         }
 
-        guard var frame = overlayFrame else { return nil }
-        frame = frame.insetBy(dx: -DesktopTrafficLightLayout.overlayPadding, dy: -DesktopTrafficLightLayout.overlayPadding).integral
-        guard frame.width > 0, frame.height > 0 else { return nil }
-
         return DesktopOverlayDescriptor(
             windowID: candidate.windowID,
             ownerPID: candidate.ownerPID,
-            bundleIdentifier: candidate.runningApplication.bundleIdentifier,
-            ownerName: candidate.ownerName,
+            bundleIdentifier: candidate.bundleIdentifier,
+            windowTopLeftBounds: candidate.topLeftBounds,
             axWindow: axWindow.element,
-            overlayFrame: frame,
             buttons: buttons
         )
     }
 
-    private func performAction(_ kind: DesktopTrafficLightKind, forWindowID windowID: CGWindowID) {
-        guard let descriptor = freshDescriptorForAction(kind, windowID: windowID) else {
+    private func performAction(
+        _ kind: DesktopTrafficLightKind,
+        forWindowID windowID: CGWindowID,
+        atScreenPoint screenPoint: NSPoint
+    ) {
+        guard let descriptor = freshDescriptorForAction(
+            kind,
+            windowID: windowID,
+            screenPoint: screenPoint
+        ) else {
             return
         }
 
@@ -726,14 +1221,16 @@ final class DesktopWindowControlsController {
         case .minimize:
             didPerform = pressButton(kind: .minimize, in: descriptor)
         case .fullScreen:
-            didPerform = pressButton(kind: .fullScreen, in: descriptor)
+            didPerform = clickNativeFullScreenButton(in: descriptor)
         }
 
         if didPerform {
-            if kind != .fullScreen {
-                panelsByWindowID[windowID]?.closePanel()
-                panelsByWindowID.removeValue(forKey: windowID)
+            descriptorRefreshGeneration += 1
+            if isDescriptorRefreshInProgress {
+                shouldRefreshAfterCurrentDescriptorPass = true
             }
+            panelsByWindowID[windowID]?.closePanel()
+            panelsByWindowID.removeValue(forKey: windowID)
             DispatchQueue.main.asyncAfter(deadline: .now() + RefreshTiming.actionRefreshDelay) { [weak self] in
                 self?.scheduleRefresh(immediate: true)
             }
@@ -744,7 +1241,8 @@ final class DesktopWindowControlsController {
 
     private func freshDescriptorForAction(
         _ kind: DesktopTrafficLightKind,
-        windowID: CGWindowID
+        windowID: CGWindowID,
+        screenPoint: NSPoint
     ) -> DesktopOverlayDescriptor? {
         guard
             let panel = panelsByWindowID[windowID],
@@ -754,13 +1252,18 @@ final class DesktopWindowControlsController {
             return nil
         }
 
+        let coordinateMapper = DesktopScreenCoordinateMapper()
+        let targetCandidates = collectVisibleCGWindowCandidates(
+            coordinateMapper: coordinateMapper
+        ).filter {
+            $0.windowID == windowID
+                && $0.ownerPID == previousDescriptor.ownerPID
+        }
         guard
-            let freshDescriptor = collectOverlayDescriptors().first(
-                where: {
-                    $0.windowID == windowID
-                        && $0.ownerPID == previousDescriptor.ownerPID
-                }
-            )
+            let freshDescriptor = collectOverlayDescriptors(
+                candidates: targetCandidates,
+                coordinateMapper: coordinateMapper
+            ).first
         else {
             panel.closePanel()
             panelsByWindowID.removeValue(forKey: windowID)
@@ -771,13 +1274,13 @@ final class DesktopWindowControlsController {
 
         guard
             buttonKind(
-                atScreenPoint: NSEvent.mouseLocation,
+                atScreenPoint: screenPoint,
                 in: freshDescriptor
             ) == kind,
             descriptorsAreAlignedForAction(
                 previousDescriptor,
                 freshDescriptor,
-                panelFrame: panel.frame
+                panel: panel
             )
         else {
             panel.configure(
@@ -788,6 +1291,7 @@ final class DesktopWindowControlsController {
             )
             panel.order(.above, relativeTo: Int(freshDescriptor.windowID))
             panelsByWindowID[windowID] = panel
+            refreshPanelOcclusionStates(force: true)
             DWLog("Cancelled stale desktop traffic-light action for moved window \(windowID)")
             return nil
         }
@@ -798,14 +1302,18 @@ final class DesktopWindowControlsController {
     private func descriptorsAreAlignedForAction(
         _ previous: DesktopOverlayDescriptor,
         _ fresh: DesktopOverlayDescriptor,
-        panelFrame: NSRect
+        panel: DesktopTrafficLightPanel
     ) -> Bool {
         let tolerance: CGFloat = 1.5
         guard
             previous.windowID == fresh.windowID,
             previous.ownerPID == fresh.ownerPID,
-            rect(panelFrame, isWithin: tolerance, of: previous.overlayFrame),
-            rect(panelFrame, isWithin: tolerance, of: fresh.overlayFrame),
+            rect(
+                previous.windowTopLeftBounds,
+                isWithin: tolerance,
+                of: fresh.windowTopLeftBounds
+            ),
+            CFEqual(previous.axWindow, fresh.axWindow),
             previous.buttons.count == fresh.buttons.count
         else {
             return false
@@ -817,22 +1325,24 @@ final class DesktopWindowControlsController {
             guard (previousButton == nil) == (freshButton == nil) else {
                 return false
             }
-            guard let previousButton, let freshButton else { continue }
+            guard let previousButton, let freshButton else {
+                guard panel.frame(for: kind) == nil else { return false }
+                continue
+            }
 
-            let previousLocalCenter = previousButton.localCenter(
-                in: previous.overlayFrame
-            )
-            let displayedCenter = NSPoint(
-                x: panelFrame.minX + previousLocalCenter.x,
-                y: panelFrame.minY + previousLocalCenter.y
-            )
             guard
-                hypot(
-                    displayedCenter.x - freshButton.screenCenter.x,
-                    displayedCenter.y - freshButton.screenCenter.y
-                ) <= tolerance,
-                abs(previousButton.hitDiameter - freshButton.hitDiameter)
-                    <= tolerance
+                CFEqual(previousButton.actionElement, freshButton.actionElement),
+                let displayedFrame = panel.frame(for: kind),
+                rect(
+                    displayedFrame,
+                    isWithin: tolerance,
+                    of: previousButton.screenHitRect.integral
+                ),
+                rect(
+                    displayedFrame,
+                    isWithin: tolerance,
+                    of: freshButton.screenHitRect.integral
+                )
             else {
                 return false
             }
@@ -895,6 +1405,201 @@ final class DesktopWindowControlsController {
         }
     }
 
+    private func clickNativeFullScreenButton(
+        in descriptor: DesktopOverlayDescriptor
+    ) -> Bool {
+        guard
+            !nativeClickSuppressedWindowIDs.contains(descriptor.windowID),
+            let button = descriptor.buttons.first(where: {
+                $0.kind == .fullScreen
+            }),
+            let topLeftPoint = DesktopScreenCoordinateMapper()
+                .topLeftPoint(fromAppKitPoint: button.screenCenter),
+            let mouseDown = CGEvent(
+                mouseEventSource: nil,
+                mouseType: .leftMouseDown,
+                mouseCursorPosition: topLeftPoint,
+                mouseButton: .left
+            ),
+            let mouseUp = CGEvent(
+                mouseEventSource: nil,
+                mouseType: .leftMouseUp,
+                mouseCursorPosition: topLeftPoint,
+                mouseButton: .left
+            )
+        else {
+            return false
+        }
+
+        let windowID = descriptor.windowID
+        nativeClickSuppressedWindowIDs.insert(windowID)
+        DWLog(
+            "Forwarding desktop green button click for window \(windowID) at \(topLeftPoint)"
+        )
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + RefreshTiming.nativeClickDownDelay
+        ) { [weak self] in
+            guard let self else { return }
+            guard self.canForwardNativeButtonClick(
+                windowID: windowID,
+                buttonElement: button.actionElement,
+                atTopLeftPoint: topLeftPoint
+            ) else {
+                DWLog(
+                    "Cancelled desktop green button forwarding because window \(windowID) moved or became covered"
+                )
+                self.finishNativeButtonForwarding(windowID: windowID)
+                return
+            }
+
+            mouseDown.post(tap: .cghidEventTap)
+            DispatchQueue.main.asyncAfter(
+                deadline: .now() + RefreshTiming.nativeClickUpDelay
+            ) { [weak self] in
+                mouseUp.post(tap: .cghidEventTap)
+                DispatchQueue.main.asyncAfter(
+                    deadline: .now() + RefreshTiming.nativeClickRefreshDelay
+                ) {
+                    self?.finishNativeButtonForwarding(windowID: windowID)
+                }
+            }
+        }
+        return true
+    }
+
+    private func canForwardNativeButtonClick(
+        windowID: CGWindowID,
+        buttonElement: AXUIElement,
+        atTopLeftPoint point: CGPoint
+    ) -> Bool {
+        let tolerance: CGFloat = 1.5
+        guard
+            isRunning,
+            nativeClickSuppressedWindowIDs.contains(windowID),
+            let currentButtonFrame = frame(of: buttonElement)
+        else {
+            return false
+        }
+        let currentCenter = CGPoint(
+            x: currentButtonFrame.midX,
+            y: currentButtonFrame.midY
+        )
+        guard hypot(
+            currentCenter.x - point.x,
+            currentCenter.y - point.y
+        ) <= tolerance else {
+            return false
+        }
+
+        guard topmostEligibleWindowID(atTopLeftPoint: point) == windowID else {
+            return false
+        }
+        return accessibilityHitTestMatchesButton(
+            buttonElement,
+            atTopLeftPoint: point
+        )
+    }
+
+    private func accessibilityHitTestMatchesButton(
+        _ buttonElement: AXUIElement,
+        atTopLeftPoint point: CGPoint
+    ) -> Bool {
+        let systemWideElement = AXUIElementCreateSystemWide()
+        var hitElement: AXUIElement?
+        let error = AXUIElementCopyElementAtPosition(
+            systemWideElement,
+            Float(point.x),
+            Float(point.y),
+            &hitElement
+        )
+        guard error == .success, let hitElement else {
+            return false
+        }
+
+        var currentElement = hitElement
+        for _ in 0..<6 {
+            if CFEqual(currentElement, buttonElement) {
+                return true
+            }
+            guard
+                let parent = attribute(
+                    currentElement,
+                    kAXParentAttribute
+                ) as AXUIElement?,
+                !CFEqual(parent, currentElement)
+            else {
+                return false
+            }
+            currentElement = parent
+        }
+        return false
+    }
+
+    private func topmostEligibleWindowID(
+        atTopLeftPoint point: CGPoint
+    ) -> CGWindowID? {
+        let currentPID = ProcessInfo.processInfo.processIdentifier
+        let overlayWindowIDs = Set(
+            panelsByWindowID.values.flatMap(\.windowIDs)
+        )
+        let applicationState = currentOcclusionApplicationState()
+        let coordinateMapper = DesktopScreenCoordinateMapper()
+        let options: CGWindowListOption = [
+            .optionOnScreenOnly,
+            .excludeDesktopElements
+        ]
+        let rawWindows = CGWindowListCopyWindowInfo(
+            options,
+            kCGNullWindowID
+        ) as? [[String: Any]] ?? []
+
+        for dictionary in rawWindows {
+            guard
+                let ownerPID = dictionary[kCGWindowOwnerPID as String]
+                    as? pid_t,
+                let candidateWindowID = dictionary[
+                    kCGWindowNumber as String
+                ] as? CGWindowID,
+                let layer = dictionary[kCGWindowLayer as String] as? Int,
+                (dictionary[kCGWindowIsOnscreen as String] as? Bool) == true,
+                ((dictionary[kCGWindowAlpha as String] as? Double) ?? 1)
+                    > 0.01,
+                let boundsDictionary = dictionary[
+                    kCGWindowBounds as String
+                ] as? NSDictionary,
+                let bounds = CGRect(
+                    dictionaryRepresentation: boundsDictionary as CFDictionary
+                ),
+                bounds.contains(point)
+            else {
+                continue
+            }
+
+            if ownerPID == currentPID,
+                overlayWindowIDs.contains(candidateWindowID) {
+                continue
+            }
+            guard windowParticipatesInOcclusion(
+                ownerPID: ownerPID,
+                layer: layer,
+                topLeftBounds: bounds,
+                currentPID: currentPID,
+                applicationState: applicationState,
+                coordinateMapper: coordinateMapper
+            ) else {
+                continue
+            }
+            return candidateWindowID
+        }
+
+        return nil
+    }
+
+    private func finishNativeButtonForwarding(windowID: CGWindowID) {
+        nativeClickSuppressedWindowIDs.remove(windowID)
+        scheduleRefresh(immediate: true)
+    }
+
     private func pressButton(kind: DesktopTrafficLightKind, in descriptor: DesktopOverlayDescriptor) -> Bool {
         guard let button = descriptor.buttons.first(where: { $0.kind == kind }) else { return false }
         let error = AXUIElementPerformAction(button.actionElement, kAXPressAction as CFString)
@@ -906,7 +1611,7 @@ final class DesktopWindowControlsController {
     }
 
     private func isStandardAXWindow(_ axWindow: AXUIElement) -> Bool {
-        guard (attribute(axWindow, DesktopAXAttributeNames.hidden) as Bool?) != true else { return false }
+        guard (attribute(axWindow, kAXHiddenAttribute) as Bool?) != true else { return false }
 
         if let role = attribute(axWindow, kAXRoleAttribute) as String?, role != kAXWindowRole {
             return false
@@ -919,11 +1624,11 @@ final class DesktopWindowControlsController {
         return true
     }
 
-    private func isLikelyFullScreen(candidate: DesktopCGWindowCandidate, axWindow: DesktopAXWindowSnapshot) -> Bool {
-        if axWindow.isFullScreen { return true }
-
-        for screen in NSScreen.screens {
-            let screenFrame = screen.frame
+    private func isLikelyFullScreen(
+        candidate: DesktopCGWindowCandidate,
+        coordinateMapper: DesktopScreenCoordinateMapper
+    ) -> Bool {
+        for screenFrame in coordinateMapper.appKitScreenFrames {
             let intersection = candidate.appKitBounds.intersection(screenFrame)
             guard !intersection.isNull, !intersection.isEmpty else { continue }
             let screenCoverage = intersection.area / max(1, screenFrame.area)
@@ -934,14 +1639,6 @@ final class DesktopWindowControlsController {
         }
 
         return false
-    }
-
-    private func visibleArea(of rect: NSRect) -> CGFloat {
-        NSScreen.screens.reduce(CGFloat(0)) { area, screen in
-            let intersection = rect.intersection(screen.frame)
-            guard !intersection.isNull, !intersection.isEmpty else { return area }
-            return area + intersection.area
-        }
     }
 
     private func uniqueAXWindows(_ windows: [AXUIElement]) -> [AXUIElement] {
@@ -957,24 +1654,6 @@ final class DesktopWindowControlsController {
         }
 
         return unique
-    }
-
-    private func explicitCGWindowID(of axWindow: AXUIElement) -> CGWindowID? {
-        for attributeName in DesktopAXAttributeNames.possibleWindowIDs {
-            var value: CFTypeRef?
-            let error = AXUIElementCopyAttributeValue(axWindow, attributeName as CFString, &value)
-            guard error == .success, let value else { continue }
-
-            if let number = value as? NSNumber {
-                return CGWindowID(number.uint32Value)
-            }
-
-            if let string = value as? String, let number = UInt32(string) {
-                return CGWindowID(number)
-            }
-        }
-
-        return nil
     }
 
     private func attribute<T>(_ element: AXUIElement, _ attribute: String) -> T? {
@@ -1005,11 +1684,8 @@ final class DesktopWindowControlsController {
     }
 }
 
-private enum DesktopAXAttributeNames {
-    static let fullScreenButton = "AXFullScreenButton"
-    static let fullScreen = "AXFullScreen"
-    static let hidden = "AXHidden"
-    static let possibleWindowIDs = ["AXWindowID", "AXWindowNumber"]
+private enum DesktopAXMessaging {
+    static let requestTimeout: Float = 0.12
 }
 
 private enum DesktopTrafficLightLayout {
@@ -1073,16 +1749,19 @@ private struct DesktopCGWindowCandidate {
     let title: String
     let topLeftBounds: CGRect
     let appKitBounds: NSRect
-    let runningApplication: NSRunningApplication
+    let bundleIdentifier: String?
+    let coveringTopLeftFrames: [CGRect]
+}
+
+private struct DesktopCGWindowGeometry {
+    let ownerPID: pid_t
+    let topLeftBounds: CGRect
 }
 
 private struct DesktopAXWindowSnapshot {
     let element: AXUIElement
     let title: String
     let topLeftFrame: CGRect
-    let appKitFrame: NSRect
-    let explicitWindowID: CGWindowID?
-    let isFullScreen: Bool
     let controls: [DesktopAXButtonSnapshot]
 }
 
@@ -1097,50 +1776,216 @@ private struct DesktopOverlayDescriptor {
     let windowID: CGWindowID
     let ownerPID: pid_t
     let bundleIdentifier: String?
-    let ownerName: String
+    let windowTopLeftBounds: CGRect
     let axWindow: AXUIElement
-    let overlayFrame: NSRect
     let buttons: [DesktopOverlayButton]
 }
 
 private struct DesktopOverlayButton {
     let kind: DesktopTrafficLightKind
     let actionElement: AXUIElement
-    let nativeFrame: NSRect
+    let topLeftHitRect: CGRect
     let screenCenter: NSPoint
     let hitDiameter: CGFloat
 
-    func hitRect(in overlayFrame: NSRect) -> NSRect {
-        let center = localCenter(in: overlayFrame)
-        return NSRect(
-            x: center.x - hitDiameter / 2,
-            y: center.y - hitDiameter / 2,
+    var screenHitRect: NSRect {
+        NSRect(
+            x: screenCenter.x - hitDiameter / 2,
+            y: screenCenter.y - hitDiameter / 2,
             width: hitDiameter,
             height: hitDiameter
         )
     }
+}
 
-    func localCenter(in overlayFrame: NSRect) -> NSPoint {
-        NSPoint(x: screenCenter.x - overlayFrame.minX, y: screenCenter.y - overlayFrame.minY)
+private final class DesktopTrafficLightPanel {
+    var onButtonPressed: ((DesktopTrafficLightKind, CGWindowID, NSPoint) -> Void)?
+    private(set) var descriptor: DesktopOverlayDescriptor?
+
+    private var panelsByKind: [DesktopTrafficLightKind: DesktopTrafficLightButtonPanel] = [:]
+    private var unoccludedKinds = Set<DesktopTrafficLightKind>()
+    private var relativeWindowNumber: Int?
+
+    var windowIDs: [CGWindowID] {
+        panelsByKind.values.compactMap { panel in
+            guard panel.windowNumber > 0 else { return nil }
+            return CGWindowID(panel.windowNumber)
+        }
+    }
+
+    var hasVisibleButtons: Bool {
+        panelsByKind.values.contains { $0.isIntendedVisible }
+    }
+
+    func frame(for kind: DesktopTrafficLightKind) -> NSRect? {
+        panelsByKind[kind]?.frame
+    }
+
+    func setUnoccludedKinds(_ kinds: Set<DesktopTrafficLightKind>) {
+        let activeKinds = Set(descriptor?.buttons.map(\.kind) ?? [])
+        unoccludedKinds = kinds.intersection(activeKinds)
+    }
+
+    func configure(
+        descriptor: DesktopOverlayDescriptor,
+        targetDiameter: CGFloat,
+        revealOnHover: Bool,
+        hoverEnlargementEnabled: Bool
+    ) {
+        self.descriptor = descriptor
+
+        let activeKinds = Set(descriptor.buttons.map(\.kind))
+        unoccludedKinds = activeKinds
+        for kind in DesktopTrafficLightKind.allCases where !activeKinds.contains(kind) {
+            panelsByKind.removeValue(forKey: kind)?.closePanel()
+        }
+
+        for button in descriptor.buttons {
+            let panel = panelsByKind[button.kind]
+                ?? DesktopTrafficLightButtonPanel(kind: button.kind)
+            panel.configure(button: button) { [weak self] kind, screenPoint in
+                guard let self, let windowID = self.descriptor?.windowID else {
+                    return
+                }
+                self.onButtonPressed?(kind, windowID, screenPoint)
+            }
+            panelsByKind[button.kind] = panel
+        }
+
+        updateMouseLocation(
+            NSEvent.mouseLocation,
+            targetDiameter: targetDiameter,
+            revealOnHover: revealOnHover,
+            hoverEnlargementEnabled: hoverEnlargementEnabled,
+            animated: false
+        )
+    }
+
+    func order(
+        _: NSWindow.OrderingMode,
+        relativeTo otherWindowNumber: Int
+    ) {
+        relativeWindowNumber = otherWindowNumber
+        panelsByKind.values.forEach {
+            $0.refreshOrdering(relativeWindowNumber: otherWindowNumber)
+        }
+    }
+
+    func updateMouseLocation(
+        _ screenPoint: NSPoint,
+        targetDiameter: CGFloat,
+        revealOnHover: Bool,
+        hoverEnlargementEnabled: Bool,
+        animated: Bool = true
+    ) {
+        guard let descriptor else {
+            panelsByKind.values.forEach { $0.closePanel() }
+            return
+        }
+
+        let hoveredKind = buttonKind(
+            atScreenPoint: screenPoint,
+            in: descriptor
+        )
+        let shouldReveal = !revealOnHover
+            || containsControlRegion(
+                screenPoint: screenPoint,
+                in: descriptor
+            )
+        let clampedTarget = DesktopTrafficLightLayout.clampButtonDiameter(
+            targetDiameter
+        )
+
+        for (kind, panel) in panelsByKind {
+            let isUnoccluded = unoccludedKinds.contains(kind)
+            let isHovered = isUnoccluded && hoveredKind == kind
+            let diameter = shouldReveal
+                && hoverEnlargementEnabled
+                && isHovered
+                ? clampedTarget
+                : DesktopTrafficLightLayout.baseButtonDiameter
+            panel.update(
+                revealed: shouldReveal && isUnoccluded,
+                hovered: isHovered,
+                diameter: diameter,
+                animated: animated,
+                relativeWindowNumber: relativeWindowNumber
+            )
+        }
+    }
+
+    func closePanel() {
+        panelsByKind.values.forEach { $0.closePanel() }
+        panelsByKind.removeAll()
+        unoccludedKinds.removeAll()
+        descriptor = nil
+        relativeWindowNumber = nil
+    }
+
+    private func buttonKind(
+        atScreenPoint point: NSPoint,
+        in descriptor: DesktopOverlayDescriptor
+    ) -> DesktopTrafficLightKind? {
+        descriptor.buttons
+            .filter { button in
+                unoccludedKinds.contains(button.kind)
+                    && button.screenHitRect.contains(point)
+            }
+            .min { left, right in
+                hypot(
+                    point.x - left.screenCenter.x,
+                    point.y - left.screenCenter.y
+                ) < hypot(
+                    point.x - right.screenCenter.x,
+                    point.y - right.screenCenter.y
+                )
+            }?
+            .kind
+    }
+
+    private func containsControlRegion(
+        screenPoint: NSPoint,
+        in descriptor: DesktopOverlayDescriptor
+    ) -> Bool {
+        let region = descriptor.buttons
+            .filter { unoccludedKinds.contains($0.kind) }
+            .reduce(NSRect.null) { result, button in
+            let hitRect = button.screenHitRect.insetBy(
+                dx: -DesktopTrafficLightLayout.overlayPadding,
+                dy: -DesktopTrafficLightLayout.overlayPadding
+            )
+            return result.isNull ? hitRect : result.union(hitRect)
+        }
+        return !region.isNull && region.contains(screenPoint)
     }
 }
 
-private final class DesktopTrafficLightPanel: NSPanel {
-    var onButtonPressed: ((DesktopTrafficLightKind, CGWindowID) -> Void)?
-    private(set) var descriptor: DesktopOverlayDescriptor?
+private final class DesktopTrafficLightButtonPanel: NSPanel {
+    private let buttonView: DesktopTrafficLightButtonView
+    private var shouldBeVisible = false
 
-    private let effectView = NSVisualEffectView()
-    private let overlayView = DesktopTrafficLightOverlayView()
+    var isIntendedVisible: Bool {
+        shouldBeVisible
+    }
 
-    init() {
+    init(kind: DesktopTrafficLightKind) {
+        buttonView = DesktopTrafficLightButtonView(kind: kind)
         super.init(
-            contentRect: NSRect(x: 0, y: 0, width: 120, height: 44),
+            contentRect: NSRect(
+                x: 0,
+                y: 0,
+                width: DesktopTrafficLightLayout.fixedHitDiameter,
+                height: DesktopTrafficLightLayout.fixedHitDiameter
+            ),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
         )
 
-        level = .normal
+        contentView = buttonView
+        buttonView.frame = contentView?.bounds ?? .zero
+        buttonView.autoresizingMask = [.width, .height]
+        level = .floating
         collectionBehavior = [
             .canJoinAllSpaces,
             .fullScreenAuxiliary,
@@ -1154,212 +1999,64 @@ private final class DesktopTrafficLightPanel: NSPanel {
         hidesOnDeactivate = false
         isReleasedWhenClosed = false
         acceptsMouseMovedEvents = true
+        becomesKeyOnlyIfNeeded = true
         ignoresMouseEvents = true
-        setupContent()
+        animationBehavior = .none
     }
-
-    override var canBecomeKey: Bool { false }
-    override var canBecomeMain: Bool { false }
 
     func configure(
-        descriptor: DesktopOverlayDescriptor,
-        targetDiameter: CGFloat,
-        revealOnHover: Bool,
-        hoverEnlargementEnabled: Bool
+        button: DesktopOverlayButton,
+        onPress: @escaping (DesktopTrafficLightKind, NSPoint) -> Void
     ) {
-        self.descriptor = descriptor
-        setFrame(descriptor.overlayFrame, display: false)
-        effectView.frame = NSRect(origin: .zero, size: descriptor.overlayFrame.size)
-        overlayView.frame = effectView.bounds
-        overlayView.configure(descriptor: descriptor) { [weak self] kind in
-            guard let self, let windowID = self.descriptor?.windowID else { return }
-            self.onButtonPressed?(kind, windowID)
+        setFrame(button.screenHitRect.integral, display: false)
+        buttonView.onPress = { [weak self, weak buttonView] kind, localPoint in
+            guard let self, let buttonView else { return }
+            let windowPoint = buttonView.convert(localPoint, to: nil)
+            let screenPoint = convertPoint(toScreen: windowPoint)
+            onPress(kind, screenPoint)
         }
-        updateMouseLocation(
-            NSEvent.mouseLocation,
-            targetDiameter: targetDiameter,
-            revealOnHover: revealOnHover,
-            hoverEnlargementEnabled: hoverEnlargementEnabled,
-            animated: false
-        )
     }
 
-    func updateMouseLocation(
-        _ screenPoint: NSPoint,
-        targetDiameter: CGFloat,
-        revealOnHover: Bool,
-        hoverEnlargementEnabled: Bool,
-        animated: Bool = true
+    func update(
+        revealed: Bool,
+        hovered: Bool,
+        diameter: CGFloat,
+        animated: Bool,
+        relativeWindowNumber: Int?
     ) {
-        guard descriptor != nil else {
-            ignoresMouseEvents = true
-            return
-        }
-
-        let hoveredKind = overlayView.buttonKind(atScreenPoint: screenPoint, in: self)
-        let isInControlRegion = overlayView.containsControlRegion(screenPoint: screenPoint, in: self)
-        let shouldReveal = !revealOnHover || isInControlRegion
-        ignoresMouseEvents = hoveredKind == nil
-
-        overlayView.updateButtonState(
-            revealed: shouldReveal,
-            hoveredKind: hoveredKind,
-            targetDiameter: targetDiameter,
-            hoverEnlargementEnabled: hoverEnlargementEnabled,
+        shouldBeVisible = revealed
+        ignoresMouseEvents = !revealed || !hovered
+        buttonView.update(
+            revealed: revealed,
+            hovered: hovered,
+            diameter: diameter,
             animated: animated
         )
+        refreshOrdering(relativeWindowNumber: relativeWindowNumber)
     }
 
     func closePanel() {
-        overlayView.invalidateAnimations()
-        descriptor = nil
+        buttonView.invalidateAnimations()
+        shouldBeVisible = false
+        ignoresMouseEvents = true
         orderOut(nil)
     }
 
-    private func setupContent() {
-        effectView.material = .titlebar
-        effectView.blendingMode = .behindWindow
-        effectView.state = .active
-        effectView.alphaValue = 0.94
-        effectView.wantsLayer = true
-        effectView.layer?.cornerRadius = 8
-        effectView.layer?.cornerCurve = .continuous
-        effectView.layer?.masksToBounds = true
-        effectView.autoresizingMask = [.width, .height]
+    func refreshOrdering(relativeWindowNumber: Int?) {
+        guard shouldBeVisible else {
+            if isVisible {
+                orderOut(nil)
+            }
+            return
+        }
 
-        overlayView.autoresizingMask = [.width, .height]
-        effectView.addSubview(overlayView)
-        contentView = effectView
+        if relativeWindowNumber != nil {
+            orderFrontRegardless()
+        }
     }
 }
 
-private final class DesktopTrafficLightOverlayView: NSView {
-    private var descriptor: DesktopOverlayDescriptor?
-    private var buttonViews: [DesktopTrafficLightKind: DesktopTrafficLightButtonView] = [:]
-    private var onPress: ((DesktopTrafficLightKind) -> Void)?
-
-    override var isOpaque: Bool { false }
-
-    func configure(descriptor: DesktopOverlayDescriptor, onPress: @escaping (DesktopTrafficLightKind) -> Void) {
-        self.descriptor = descriptor
-        self.onPress = onPress
-
-        let activeKinds = Set(descriptor.buttons.map(\.kind))
-        for kind in DesktopTrafficLightKind.allCases where !activeKinds.contains(kind) {
-            buttonViews[kind]?.removeFromSuperview()
-            buttonViews.removeValue(forKey: kind)
-        }
-
-        for button in descriptor.buttons {
-            let buttonView = buttonViews[button.kind] ?? DesktopTrafficLightButtonView(kind: button.kind)
-            if buttonView.superview == nil {
-                addSubview(buttonView)
-            }
-            buttonView.onPress = { [weak self, weak buttonView] kind, point in
-                guard
-                    let self,
-                    let buttonView,
-                    self.button(
-                        atLocalPoint: self.convert(point, from: buttonView)
-                    )?.kind == kind
-                else {
-                    return
-                }
-                self.onPress?(kind)
-            }
-            buttonView.frame = button.hitRect(in: descriptor.overlayFrame)
-            buttonView.toolTip = button.kind.toolTip
-            buttonViews[button.kind] = buttonView
-        }
-
-        needsDisplay = true
-    }
-
-    func updateButtonState(
-        revealed: Bool,
-        hoveredKind: DesktopTrafficLightKind?,
-        targetDiameter: CGFloat,
-        hoverEnlargementEnabled: Bool,
-        animated: Bool
-    ) {
-        let clampedTarget = DesktopTrafficLightLayout.clampButtonDiameter(targetDiameter)
-        for (kind, buttonView) in buttonViews {
-            let isHovered = hoveredKind == kind
-            let diameter = revealed && hoverEnlargementEnabled && isHovered
-                ? clampedTarget
-                : DesktopTrafficLightLayout.baseButtonDiameter
-            buttonView.update(
-                revealed: revealed,
-                hovered: isHovered,
-                diameter: diameter,
-                animated: animated
-            )
-        }
-    }
-
-    func buttonKind(
-        atScreenPoint screenPoint: NSPoint,
-        in panel: NSPanel
-    ) -> DesktopTrafficLightKind? {
-        guard descriptor != nil else { return nil }
-        let localPoint = point(screenPoint: screenPoint, in: panel)
-        return button(atLocalPoint: localPoint)?.kind
-    }
-
-    func containsControlRegion(screenPoint: NSPoint, in panel: NSPanel) -> Bool {
-        guard let descriptor else { return false }
-        let localPoint = point(screenPoint: screenPoint, in: panel)
-        let region = descriptor.buttons.reduce(NSRect.null) { partialResult, button in
-            let hitRect = button.hitRect(in: descriptor.overlayFrame)
-                .insetBy(dx: -DesktopTrafficLightLayout.overlayPadding, dy: -DesktopTrafficLightLayout.overlayPadding)
-            return partialResult.isNull ? hitRect : partialResult.union(hitRect)
-        }
-        return !region.isNull && region.contains(localPoint)
-    }
-
-    func invalidateAnimations() {
-        buttonViews.values.forEach { $0.invalidateAnimations() }
-    }
-
-    override func hitTest(_ point: NSPoint) -> NSView? {
-        guard
-            let button = button(atLocalPoint: point),
-            let buttonView = buttonViews[button.kind]
-        else {
-            return nil
-        }
-        return buttonView.hitTest(convert(point, to: buttonView))
-    }
-
-    private func button(atLocalPoint point: NSPoint) -> DesktopOverlayButton? {
-        guard let descriptor else { return nil }
-
-        return descriptor.buttons
-            .filter { button in
-                button.hitRect(in: descriptor.overlayFrame).contains(point)
-            }
-            .min { left, right in
-                let leftCenter = left.localCenter(in: descriptor.overlayFrame)
-                let rightCenter = right.localCenter(in: descriptor.overlayFrame)
-                let leftDistance = hypot(
-                    point.x - leftCenter.x,
-                    point.y - leftCenter.y
-                )
-                let rightDistance = hypot(
-                    point.x - rightCenter.x,
-                    point.y - rightCenter.y
-                )
-                return leftDistance < rightDistance
-            }
-    }
-
-    private func point(screenPoint: NSPoint, in panel: NSPanel) -> NSPoint {
-        let windowPoint = panel.convertPoint(fromScreen: screenPoint)
-        return convert(windowPoint, from: nil)
-    }
-}
-
-private final class DesktopTrafficLightButtonView: NSButton {
+private final class DesktopTrafficLightButtonView: NSView {
     var onPress: ((DesktopTrafficLightKind, NSPoint) -> Void)?
 
     private let kind: DesktopTrafficLightKind
@@ -1372,8 +2069,6 @@ private final class DesktopTrafficLightButtonView: NSButton {
     init(kind: DesktopTrafficLightKind) {
         self.kind = kind
         super.init(frame: NSRect(x: 0, y: 0, width: DesktopTrafficLightLayout.fixedHitDiameter, height: DesktopTrafficLightLayout.fixedHitDiameter))
-        title = ""
-        isBordered = false
         wantsLayer = true
         alphaValue = 1
         toolTip = kind.toolTip
@@ -1595,11 +2290,15 @@ private struct DesktopScreenCoordinateMapper {
     }
 
     private let screenPairs: [ScreenPair]
+    let appKitScreenFrames: [NSRect]
 
     init() {
-        screenPairs = NSScreen.screens.compactMap { screen in
+        let pairs: [ScreenPair] = NSScreen.screens.compactMap {
+            screen -> ScreenPair? in
             guard
-                let number = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber
+                let number = screen.deviceDescription[
+                    NSDeviceDescriptionKey("NSScreenNumber")
+                ] as? NSNumber
             else {
                 return nil
             }
@@ -1610,6 +2309,8 @@ private struct DesktopScreenCoordinateMapper {
                 topLeftFrame: CGDisplayBounds(displayID)
             )
         }
+        screenPairs = pairs
+        appKitScreenFrames = pairs.map(\.appKitFrame)
     }
 
     func appKitRect(fromTopLeftRect rect: CGRect) -> NSRect? {
@@ -1618,6 +2319,49 @@ private struct DesktopScreenCoordinateMapper {
         let yFromTop = rect.minY - screen.topLeftFrame.minY
         let y = screen.appKitFrame.maxY - yFromTop - rect.height
         return NSRect(x: x, y: y, width: rect.width, height: rect.height)
+    }
+
+    func appKitPoint(fromTopLeftPoint point: CGPoint) -> NSPoint? {
+        guard let screen = screenPairs.first(where: {
+            $0.topLeftFrame.contains(point)
+        }) else {
+            return nil
+        }
+        let x = screen.appKitFrame.minX + (point.x - screen.topLeftFrame.minX)
+        let y = screen.appKitFrame.maxY - (point.y - screen.topLeftFrame.minY)
+        return NSPoint(x: x, y: y)
+    }
+
+    func topLeftPoint(fromAppKitPoint point: NSPoint) -> CGPoint? {
+        guard let screen = screenPairs.first(where: {
+            $0.appKitFrame.contains(point)
+        }) else {
+            return nil
+        }
+        let x = screen.topLeftFrame.minX + (point.x - screen.appKitFrame.minX)
+        let y = screen.topLeftFrame.minY + (screen.appKitFrame.maxY - point.y)
+        return CGPoint(x: x, y: y)
+    }
+
+    func visibleArea(of rect: NSRect) -> CGFloat {
+        appKitScreenFrames.reduce(CGFloat(0)) { area, screenFrame in
+            let intersection = rect.intersection(screenFrame)
+            guard !intersection.isNull, !intersection.isEmpty else {
+                return area
+            }
+            return area + intersection.area
+        }
+    }
+
+    func nearlyCoversTopLeftScreen(_ rect: CGRect) -> Bool {
+        screenPairs.contains { pair in
+            let intersection = pair.topLeftFrame.intersection(rect)
+            guard !intersection.isNull, !intersection.isEmpty else {
+                return false
+            }
+            return intersection.area / max(1, pair.topLeftFrame.area)
+                >= 0.985
+        }
     }
 
     private func screenPair(containing rect: CGRect) -> ScreenPair? {
