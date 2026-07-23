@@ -6,6 +6,12 @@
 
 ## 2026-07-23
 
+- 准备修正版 `v1.1.23 (48)`：纠正 v1.1.21/v1.1.22 对需求范围的误解，Dock 悬浮预览卡片恢复到 v1.1.20 的原有控制按钮行为；隐藏、单颗 hover 放大和红钮退出策略仅作用于桌面上其他 App 的真实普通窗口，不再修改 `PreviewPanel`。
+- 新增 `DesktopWindowControlsController`：使用公开 CoreGraphics 与 Accessibility API 对可见普通窗口做 explicit window ID 优先、标题/几何歧义保守跳过的一对一匹配，在真实红黄绿位置叠加 Y-Dock 自有 nonactivating panel。支持进入左上区域后显示、只放大最近的单颗按钮、红钮关闭窗口或按全部/黑名单/白名单 graceful terminate、黄钮最小化、绿钮全屏或缩放；桌面策略不调用 `forceTerminate()`。
+- 桌面 overlay 增加多屏 Quartz 坐标换算、Space/激活/拖动/松开刷新、重叠 hit area 最近中心判定、mouse-down/mouse-up 同按钮复核和 action 前 fresh descriptor 校验。窗口已移动、身份变化、离屏、全屏或 AX/CG 匹配不再可靠时取消本次动作，不对旧 AX 元素执行操作。
+- Dock 点击最小化改用 timestamped pre-click topmost 快照、启动/设置启用时证据预热、严格 `AXDockItem / AXApplicationDockItem` 命中和批量 AXWindow 一次性认领；只有点击前已前台且目标普通窗口同时通过当前与点击前 topmost 证据时才最小化，后台 App 或被其他普通窗口覆盖时保留系统原生行为。
+- `v1.1.23 (48)` 无签名预验证通过：arm64/x86_64 Debug 与 Release 使用独立 `/tmp` DerivedData 构建成功，主可执行文件分别确认为严格 thin 且 Info.plist 均为 `1.1.23 (48)`；arm64 `xcodebuild analyze` 通过，AppSettings/policy 与 updater asset selector standalone 测试分别以 arm64、x86_64 编译运行全部通过。设置 preview 模式现在跳过权限引导、窗口跟踪器和更新检查，功能页截图确认“桌面窗口红绿灯”、单颗放大尺寸预览和 Dock 点击设置布局正常，临时预览进程已主动结束。
+
 - 准备修复版 `v1.1.22 (47)`：修复预览卡片左上局部 tracking 在标题/icon 子视图路径下无法可靠更新的问题。改用固定左上区域的专用 tracking view 作为真实 hit-test target，控制按钮保持在其上层，空白区域 mouse-down 继续转发为卡片选择；真实指针验证中央区域保持隐藏、进入左上后显示，紫色与红色按钮可分别放大到设置的 `30pt` 并完成点击。
 - 受控双窗口 Probe 确认红色按钮进入 `NSRunningApplication.terminate()` graceful quit，日志依次记录 termination request 与 will-terminate，未在策略路径使用强制终止；此前短等待内进程仍存活属于异步正常退出时序。
 - Dock 点击最小化新增“目标 App 普通用户窗口在点击前位于当前窗口堆栈最上层”的首要条件，并与原 frontmost App 快照共同 fail closed。CoreGraphics 前到后窗口查询会排除 Y-Dock、Dock/桌面、非普通 App、透明/离屏/非零层、小窗口和菜单栏状记录；当前点击与最后 pointer-move 的 topmost owner 都必须匹配目标 PID。受控验证覆盖 frontmost + topmost 时最小化全部窗口、frontmost 但被另一 App 普通窗口覆盖时不最小化，以及后台 App 点击仅原生激活。

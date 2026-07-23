@@ -114,18 +114,24 @@ final class DockWindowPreviewApp: NSObject, NSApplicationDelegate {
         observeApplicationLifecycle()
         let isShowingStartupMenu = showRequestedStartupUIIfNeeded()
         let isSettingsPreview = ProcessInfo.processInfo.environment["Y_SETTINGS_PREVIEW"] == "1"
-        if !isShowingStartupMenu && !isSettingsPreview {
+        if isSettingsPreview {
+            showSettingsForPreviewIfRequested()
+            return
+        }
+        if !isShowingStartupMenu {
             permissionsManager.showInitialPermissionGuidanceIfNeeded()
         }
         mouseTracker.start()
         optionTabSwitcher.start()
         desktopWindowControlsController.start()
         scheduleStartupUpdateCheck()
-        showSettingsForPreviewIfRequested()
         DWLog("\(AppBranding.displayName) launched")
     }
 
     func applicationDidBecomeActive(_ notification: Notification) {
+        guard ProcessInfo.processInfo.environment["Y_SETTINGS_PREVIEW"] != "1" else {
+            return
+        }
         permissionsManager.showMissingPermissionGuidance()
     }
 

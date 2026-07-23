@@ -2,6 +2,14 @@
 
 All notable Y-Dock release changes are tracked here.
 
+## v1.1.23 - 2026-07-23
+
+- Restored Dock preview-card controls to their pre-v1.1.21 behavior; desktop traffic-light settings no longer alter, hide, enlarge, or reroute the controls inside Dock preview cards.
+- Added public-API desktop-window traffic-light overlays for reliably matched ordinary windows. The buttons can stay hidden until the pointer enters the upper-left control region, and hovering enlarges only the targeted red, yellow, or green button.
+- Added desktop red-button routing that either closes the current AX window or requests graceful App termination using all-App, blacklist, or whitelist policy; this path never falls back to force termination.
+- Hardened overlay matching and actions with explicit window IDs when available, conservative AX/CG title-and-geometry fallback, per-window AX ownership, multi-display coordinate conversion, Space/window-move refreshes, nearest-button hit testing, and a fresh descriptor check immediately before every action.
+- Hardened Dock-click minimization with timestamped pre-click topmost-window snapshots, startup/settings evidence prewarming, strict application-Dock-item filtering, and one-to-one batch AX matching so background or covered Apps continue to receive native Dock activation instead of being minimized.
+
 ## v1.1.22 - 2026-07-23
 
 - Fixed preview-card controls that could remain hidden when the pointer entered the upper-left control area through title or icon subviews; hover enlargement and the red close action now receive the intended real pointer path.

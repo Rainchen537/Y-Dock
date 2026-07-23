@@ -323,15 +323,23 @@ notarize() {
 validate_staple() {
   local target="$1"
   local output
-  if ! output="$(xcrun stapler validate "$target" 2>&1)"; then
+  local attempt
+
+  for attempt in {1..4}; do
+    if output="$(xcrun stapler validate "$target" 2>&1)" &&
+        [[ "$output" == *"The validate action worked!"* ]]; then
+      print -r -- "$output"
+      return 0
+    fi
+
     print -u2 -- "$output"
-    return 1
-  fi
-  print -r -- "$output"
-  if [[ "$output" != *"The validate action worked!"* ]]; then
-    echo "✗ 未检测到有效的 stapled ticket：$target" >&2
-    return 1
-  fi
+    if (( attempt == 4 )); then
+      echo "✗ Apple 公证票据验证（${target:t}）连续 4 次失败。" >&2
+      return 1
+    fi
+    echo "  ! Apple 公证票据验证（${target:t}）暂时失败，$((attempt * 5)) 秒后重试（$attempt/4）…" >&2
+    sleep "$((attempt * 5))"
+  done
 }
 
 run_standalone_tests() {
