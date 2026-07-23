@@ -19,6 +19,10 @@
 - descriptor 完成时新增当前 CGWindow owner/坐标/尺寸复核，约 30 Hz 的可见 panel 遮挡循环也会立即隐藏已经程序化移动的旧坐标 panel；外部 mouse-down/drag 期间停止 descriptor 重建，直到 mouse-up 才恢复。受控测试确认：窗口移动后旧 panel 在约 `70ms` 内从 3 颗降为 0、约 `770ms` 后在新位置恢复；持续按住外部鼠标期间四次采样均为 0；绿色延迟期间移动目标或显示 accessory 浮动遮挡窗口均取消缩放。
 - WindowServer 热态基准 600 次采样的组合调用平均约 `0.48ms`、p95 约 `0.61ms`；遮挡轮询改为仅在至少一颗增强按钮应显示时使用约 30 Hz，无可见增强按钮时回落到 `0.45s` 常规刷新。设置功能页截图确认“鼠标进入左上区域后显示增强按钮”完整显示且未截断。当前测试环境仅检测到一块物理显示器，多显示器换算仍由 `NSScreenNumber` 与 `CGDisplayBounds` 的公开路径覆盖，本轮未把单屏结果冒充为多屏实机验证。
 - 上述源码变化发生在此前签名、公证产物生成之后，因此旧 `/tmp/Y-Dock-release-v1.1.23` 双架构 DMG 已明确作废，不得上传、复用或作为最终验证依据；正式发布必须从最终提交重新完整运行 `release.sh`。
+- 最终源码提交 `9ff75bf` 后，从不含受保护未跟踪文件的干净 worktree 重新完整运行 `release.sh` 成功。arm64 App/DMG 公证任务分别为 `30ce6f93-ad4d-47b2-8b03-b30acdc0a0a2`、`534c7057-e1c0-431f-9bcb-c9cf6df45694`；x86_64 App/DMG 分别为 `2f6daf51-c37a-47af-9e26-cce4c3342481`、`6344d33b-68ed-4301-9e2c-5731e6daaaee`，均为 Accepted。
+- 最终 arm64 DMG 为 `1,745,558` bytes，SHA-256 `8c19282556e2a95585196b1ea4110d54f7225611cf4a2f6bd4398f8636fe6b05`；x86_64 DMG 为 `1,811,457` bytes，SHA-256 `cf14c298a2608250aa7d038687b122093c93ea5d36e25d545f0726571cc6e593`。两包均独立完成 Developer ID 签名、公证、staple、Gatekeeper、`hdiutil verify`、只读挂载和严格 thin 架构断言；x86_64 最终 DMG 内 App 还通过 Rosetta 启动存活冒烟并主动结束。
+- 从最终 arm64 DMG 覆盖安装 `/Applications/Y-Dock.app`，确认正式安装版为 `1.1.23 (48)`、strict thin arm64，签名、App ticket 与 Gatekeeper 均通过。正式版菜单栏入口、功能页新文案、更新入口、开机启动状态，以及权限页“正式安装版 / 辅助功能已开启 / 屏幕录制已开启”均已复核；打开系统普通窗口后 WindowServer 确认恰好出现三颗独立 `38×38`、layer 3 增强 panel。
+- tag `v1.1.23` 精确指向 `9ff75bf`，`master` 已推送；GitHub Release `https://github.com/Rainchen537/Y-Dock/releases/tag/v1.1.23` 已公开。latest-release API 确认正文与本地 notes 逐字节一致，资产严格按 arm64、x86_64 顺序且只有两份 DMG，远端 bytes 与 `sha256:` digest 均匹配本地最终文件；README 两个架构下载链接均返回 HTTP 206。
 
 - 准备修复版 `v1.1.22 (47)`：修复预览卡片左上局部 tracking 在标题/icon 子视图路径下无法可靠更新的问题。改用固定左上区域的专用 tracking view 作为真实 hit-test target，控制按钮保持在其上层，空白区域 mouse-down 继续转发为卡片选择；真实指针验证中央区域保持隐藏、进入左上后显示，紫色与红色按钮可分别放大到设置的 `30pt` 并完成点击。
 - 受控双窗口 Probe 确认红色按钮进入 `NSRunningApplication.terminate()` graceful quit，日志依次记录 termination request 与 will-terminate，未在策略路径使用强制终止；此前短等待内进程仍存活属于异步正常退出时序。
