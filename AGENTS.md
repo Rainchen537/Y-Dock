@@ -1,6 +1,6 @@
 # Y-Dock Agent 规范
 
-本项目遵守父目录 `../AGENTS.md` 和 `../Y_PROJECT_APP_STANDARD.me`。开始任务前阅读本文件、`AI_CONTEXT.me`、`CHANGELOG.me`、`CHANGELOG.md` 和 `README.md`。
+本项目遵守父目录 `../AGENTS.md` 和 `../Y_PROJECT_APP_STANDARD.me`。开始任务前阅读本文件、`AI_CONTEXT.me`、`CHANGELOG.me`、`CHANGELOG.md`、`log.md`、`ver.md` 和 `README.md`。
 
 ## 项目身份
 
@@ -17,7 +17,7 @@ Xcode project 和 scheme 的内部名称继续使用 `DockWindowPreview`，不�
 ## 构建、验证与发布
 
 - 只在 Y-Dock 实际被修改时处理本项目；其他 App 或未同步进本仓库的共享框架变化不触发 Y-Dock 构建和发布。
-- 构建使用 `DockWindowPreview` scheme，并确保 vendored Setting 与 Permission 框架仍在 target Sources。
+- 构建使用 `DockWindowPreview` scheme，并确保 vendored Setting、Permission 与 Monitoring 框架仍在 target Sources。
 - 验证范围跟随改动：Dock hover、窗口卡片或 Option+Tab 只检查相关交互；权限、设置、更新等未受影响功能不重复做全量回归。
 - 需要正式分发时递增版本和构建号，更新 README 与 changelog，并以 `./release.sh` 作为唯一发布入口；脚本必须分别生成严格 thin `arm64` 与 `x86_64` App/DMG，不得复用旧产物或回退为通用 DMG。
 - 两种架构的正式发布产物都必须独立完成 Developer ID 签名、公证、staple、Gatekeeper、DMG 挂载复核和架构断言；从与本机架构匹配的最终 DMG 覆盖安装后，仅对本次改动和必要核心入口做冒烟检查。

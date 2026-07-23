@@ -20,6 +20,8 @@ Core behavior:
 - Runs as a menu bar/background app only. It should not appear in Dock or Cmd-Tab.
 - The status item uses a transparent `18 x 18` template image with two offset window outlines and a rounded Dock line, keeping the window-preview function recognizable in both light and dark menu bars.
 - Watches global mouse movement and performs best-effort Dock icon hit testing through Accessibility.
+- Uses one process-local `YNSEventMonitorHub` to aggregate all AppKit global/local event subscriptions. MouseTracker, OptionTabSwitcher, and DesktopWindowControlsController do not install separate `NSEvent` monitors; local observers update state before the Option+Tab interceptor may consume an event.
+- Keeps Carbon `Option+Tab`, the synchronous Esc `CGEventTap`, AXObserver focus history, workspace notifications, window capture, and timers under their existing business owners rather than routing them through the generic monitor Hub.
 - Shows an AppKit `NSPanel` preview near Dock icons with one card per window.
 - Registers `Option+Tab` with public Carbon hotkey APIs for a Windows-style window switcher.
 - Keeps preview UI lightweight: show panels quickly, then fill thumbnails from background queues where possible.
@@ -52,7 +54,7 @@ Core behavior:
 - `DockWindowPreview/MouseTracker.swift`: global mouse movement monitor, hover delay, leave delay, strict unmodified Dock primary-click observation, frontmost-App activation timing protection, and timestamped throttled pre-click topmost-window-owner snapshots with startup/settings prewarming.
 - `DockWindowPreview/DockInspector.swift`: best-effort Dock area and Dock icon inspection; the primary-click path strictly recognizes application Dock items by public Accessibility role/subrole and converts hit-test points per display through Quartz display bounds.
 - `DockWindowPreview/WindowCollector.swift`: `CGWindowListCopyWindowInfo` enumeration and filtering, including front-to-back ordinary-user-window owner detection for Dock-click eligibility and CFEqual-confirmed AX identity de-duplication.
-- `DockWindowPreview/DesktopWindowControlsController.swift`: collects visible external windows, conservatively matches CGWindow/AXWindow identities, positions three independent transparent red/yellow/green panels, applies adaptive per-button regular/accessory foreground occlusion, handles reveal/nearest-button hover enlargement, suppresses rebuilds during external mouse interaction, invalidates stale asynchronous scans on geometry/drag/Space/activation changes, and revalidates current CG geometry, public AX hit target, identity, and actual panel frames before AX action, graceful quit, or guarded native green-button forwarding.
+- `DockWindowPreview/DesktopWindowControlsController.swift`: collects visible external windows, conservatively matches CGWindow/AXWindow identities, positions three independent transparent red/yellow/green panels, applies adaptive per-button regular/accessory foreground occlusion, handles reveal/nearest-button hover enlargement, suppresses rebuilds during external mouse interaction, invalidates stale asynchronous scans on geometry/drag/Space/activation changes, and revalidates current CG geometry, public AX hit target, identity, and actual panel frames before AX action, graceful quit, or guarded native green-button forwarding. Its mouse subscriptions and descriptor timer exist only while the desktop enhancement is enabled, and its 30 Hz occlusion timer exists only while at least one enhancement button is visible.
 - `DockWindowPreview/WindowThumbnailProvider.swift`: thumbnail capture, cache, and fallback thumbnails.
 - `DockWindowPreview/PreviewPanel.swift`: AppKit preview panel UI and card interactions.
 - `DockWindowPreview/FocusOverlayPanel.swift`: lightweight visual focus overlay for hovered thumbnails.
@@ -66,6 +68,8 @@ Core behavior:
 - `Tests/AppSettingsPolicyTests.swift`: standalone tests for Dock-click window-count, frontmost evidence, snapshot refresh/timestamp policy, topmost ordinary-window filtering, desktop graceful-close all/blacklist/whitelist routing, independent list persistence, v1.1.22 legacy preference migration, invalid enum fallback, and desktop hover-size clamping; compile it together with `DockWindowPreview/AppSettings.swift` for both thin architectures.
 - `Y-Framework/Setting/YSettingsFramework.swift`: vendored copy of the shared Y-Project settings framework, kept in this repository so GitHub source checkouts build independently; it constrains windows to the active display, validates sidebar identifiers, and verifies installed runtime identity.
 - `Y-Framework/Permission/YPermissionPromptFramework.swift`: vendored first-launch and later-permission prompt coordinator; it is part of the Xcode target Sources.
+- `Y-Framework/Monitoring/YMonitoringFramework.swift`: vendored process-local AppKit event aggregation framework v1.0.0. It keeps one native global and one native local monitor, guarantees stable observer/interceptor routing, exposes diagnostics, and never records raw event content.
+- `Tests/YMonitoringFrameworkTests.swift`: standalone fake-backend tests for mask union/filtering, one-native-monitor behavior, observer-before-interceptor ordering, local consumption, cancellation snapshots, idempotent start/stop, and restart.
 - `Y-Framework/DMG/`: vendored APFS DMG framework with a high-contrast 2x Retina background; it stores the background under Finder's special-hidden `.Trashes`, removes `.fseventsd`/index metadata before compression, hides the toolbar/status/path/tab bars, and validates background pixels/DPI plus full icon coordinates after a final read-only remount.
 - `DockWindowPreview/AppIconFactory.swift`: loads the bundled app icon and draws the transparent two-window + Dock-line template menu bar icon.
 - `DockWindowPreview/AppIcon.icns`: bundled app icon.
@@ -94,7 +98,7 @@ The app icon is currently a raw `.icns` resource referenced by `CFBundleIconFile
 
 ## Build Verification
 
-The Xcode target must include both `Y-Framework/Setting/YSettingsFramework.swift` and `Y-Framework/Permission/YPermissionPromptFramework.swift` in Sources. Use these before release:
+The Xcode target must include `Y-Framework/Setting/YSettingsFramework.swift`, `Y-Framework/Permission/YPermissionPromptFramework.swift`, and `Y-Framework/Monitoring/YMonitoringFramework.swift` in Sources. Use these before release:
 
 ```sh
 xcodebuild -project DockWindowPreview.xcodeproj \

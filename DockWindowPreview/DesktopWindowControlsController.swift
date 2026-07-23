@@ -30,11 +30,13 @@ final class DesktopWindowControlsController {
     }
 
     private let settings: AppSettings
+    private let eventMonitorHub: YNSEventMonitorHub
     private let descriptorRefreshQueue = DispatchQueue(
         label: "com.ydock.desktop-window-controls",
         qos: .userInitiated
     )
     private var isRunning = false
+    private var isFeatureMonitoringActive = false
     private var refreshTimer: Timer?
     private var panelOcclusionTimer: Timer?
     private var pendingRefreshWorkItem: DispatchWorkItem?
@@ -43,15 +45,19 @@ final class DesktopWindowControlsController {
     private var descriptorRefreshGeneration = 0
     private var isDescriptorRefreshInProgress = false
     private var shouldRefreshAfterCurrentDescriptorPass = false
-    private var globalMouseMonitor: Any?
-    private var localMouseMonitor: Any?
+    private var globalEventSubscription: YMonitoringSubscription?
+    private var localEventSubscription: YMonitoringSubscription?
     private var notificationObservers: [NSObjectProtocol] = []
     private var panelsByWindowID: [CGWindowID: DesktopTrafficLightPanel] = [:]
     private var nativeClickSuppressedWindowIDs = Set<CGWindowID>()
     private var externalMouseButtonsDown = Set<Int>()
 
-    init(settings: AppSettings = .shared) {
+    init(
+        settings: AppSettings = .shared,
+        eventMonitorHub: YNSEventMonitorHub
+    ) {
         self.settings = settings
+        self.eventMonitorHub = eventMonitorHub
     }
 
     deinit {
@@ -70,10 +76,8 @@ final class DesktopWindowControlsController {
 
         guard !isRunning else { return }
         isRunning = true
-        installMouseMonitors()
         installObservers()
-        installRefreshTimer()
-        scheduleRefresh(immediate: true)
+        refreshFeatureMonitoringState()
     }
 
     func stop() {
@@ -85,41 +89,24 @@ final class DesktopWindowControlsController {
         }
 
         guard isRunning else { return }
+        stopFeatureMonitoring()
         isRunning = false
-        descriptorRefreshGeneration += 1
-        shouldRefreshAfterCurrentDescriptorPass = false
-
-        pendingRefreshWorkItem?.cancel()
-        pendingRefreshWorkItem = nil
-
-        refreshTimer?.invalidate()
-        refreshTimer = nil
-        panelOcclusionTimer?.invalidate()
-        panelOcclusionTimer = nil
-        lastPanelOcclusionTimestamp = 0
-
-        if let globalMouseMonitor {
-            NSEvent.removeMonitor(globalMouseMonitor)
-            self.globalMouseMonitor = nil
-        }
-
-        if let localMouseMonitor {
-            NSEvent.removeMonitor(localMouseMonitor)
-            self.localMouseMonitor = nil
-        }
 
         for observer in notificationObservers {
             NotificationCenter.default.removeObserver(observer)
             NSWorkspace.shared.notificationCenter.removeObserver(observer)
         }
         notificationObservers.removeAll()
-
-        removeAllPanels()
-        nativeClickSuppressedWindowIDs.removeAll()
-        externalMouseButtonsDown.removeAll()
     }
 
     private func installMouseMonitors() {
+        guard
+            globalEventSubscription == nil,
+            localEventSubscription == nil
+        else {
+            return
+        }
+
         let mask: NSEvent.EventTypeMask = [
             .mouseMoved,
             .leftMouseDown,
@@ -133,17 +120,18 @@ final class DesktopWindowControlsController {
             .otherMouseUp
         ]
 
-        globalMouseMonitor = NSEvent.addGlobalMonitorForEvents(
-            matching: mask
+        globalEventSubscription = eventMonitorHub.observeGlobal(
+            matching: mask,
+            priority: 300
         ) { [weak self] event in
             self?.handleMouseEvent(event)
         }
 
-        localMouseMonitor = NSEvent.addLocalMonitorForEvents(
-            matching: mask
+        localEventSubscription = eventMonitorHub.observeLocal(
+            matching: mask,
+            priority: 300
         ) { [weak self] event in
             self?.handleMouseEvent(event)
-            return event
         }
     }
 
@@ -238,32 +226,92 @@ final class DesktopWindowControlsController {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.scheduleRefresh(immediate: true)
+            self?.refreshFeatureMonitoringState()
         })
     }
 
     private func installRefreshTimer() {
+        guard refreshTimer == nil else { return }
         let timer = Timer(timeInterval: RefreshTiming.timerInterval, repeats: true) { [weak self] _ in
             self?.scheduleRefresh(immediate: false)
         }
         RunLoop.main.add(timer, forMode: .common)
         refreshTimer = timer
+    }
 
-        let occlusionTimer = Timer(
-            timeInterval: RefreshTiming.panelOcclusionInterval,
-            repeats: true
-        ) { [weak self] _ in
-            self?.refreshPanelOcclusionStates()
+    private func updatePanelOcclusionTimer() {
+        let shouldRun = isRunning
+            && isFeatureMonitoringActive
+            && panelsByWindowID.values.contains { $0.hasVisibleButtons }
+
+        if shouldRun {
+            guard panelOcclusionTimer == nil else { return }
+            let occlusionTimer = Timer(
+                timeInterval: RefreshTiming.panelOcclusionInterval,
+                repeats: true
+            ) { [weak self] _ in
+                self?.refreshPanelOcclusionStates()
+            }
+            RunLoop.main.add(occlusionTimer, forMode: .common)
+            panelOcclusionTimer = occlusionTimer
+            return
         }
-        RunLoop.main.add(occlusionTimer, forMode: .common)
-        panelOcclusionTimer = occlusionTimer
+
+        panelOcclusionTimer?.invalidate()
+        panelOcclusionTimer = nil
+    }
+
+    private func refreshFeatureMonitoringState() {
+        guard isRunning else { return }
+        guard settings.requiresDesktopTrafficLightOverlay else {
+            stopFeatureMonitoring()
+            return
+        }
+
+        if !isFeatureMonitoringActive {
+            isFeatureMonitoringActive = true
+            installMouseMonitors()
+            installRefreshTimer()
+        }
+        scheduleRefresh(immediate: true, invalidatesCurrentPass: true)
+    }
+
+    private func stopFeatureMonitoring() {
+        guard
+            isFeatureMonitoringActive
+                || globalEventSubscription != nil
+                || localEventSubscription != nil
+                || refreshTimer != nil
+                || panelOcclusionTimer != nil
+                || !panelsByWindowID.isEmpty
+        else {
+            return
+        }
+
+        isFeatureMonitoringActive = false
+        descriptorRefreshGeneration += 1
+        shouldRefreshAfterCurrentDescriptorPass = false
+        pendingRefreshWorkItem?.cancel()
+        pendingRefreshWorkItem = nil
+        refreshTimer?.invalidate()
+        refreshTimer = nil
+        panelOcclusionTimer?.invalidate()
+        panelOcclusionTimer = nil
+        lastPanelOcclusionTimestamp = 0
+        globalEventSubscription?.cancel()
+        globalEventSubscription = nil
+        localEventSubscription?.cancel()
+        localEventSubscription = nil
+        removeAllPanels()
+        nativeClickSuppressedWindowIDs.removeAll()
+        externalMouseButtonsDown.removeAll()
     }
 
     private func scheduleRefresh(
         immediate: Bool,
         invalidatesCurrentPass: Bool = false
     ) {
-        guard isRunning else { return }
+        guard isRunning, isFeatureMonitoringActive else { return }
         guard externalMouseButtonsDown.isEmpty else { return }
 
         if isDescriptorRefreshInProgress,
@@ -293,7 +341,7 @@ final class DesktopWindowControlsController {
     }
 
     private func refreshVisibleWindows() {
-        guard isRunning else { return }
+        guard isRunning, isFeatureMonitoringActive else { return }
         pendingRefreshWorkItem = nil
         lastRefreshTimestamp = CACurrentMediaTime()
         guard externalMouseButtonsDown.isEmpty else {
@@ -341,7 +389,7 @@ final class DesktopWindowControlsController {
     ) {
         isDescriptorRefreshInProgress = false
 
-        guard isRunning else {
+        guard isRunning, isFeatureMonitoringActive else {
             shouldRefreshAfterCurrentDescriptorPass = false
             return
         }
@@ -474,6 +522,7 @@ final class DesktopWindowControlsController {
     private func removeAllPanels() {
         panelsByWindowID.values.forEach { $0.closePanel() }
         panelsByWindowID.removeAll()
+        updatePanelOcclusionTimer()
     }
 
     private func updatePanelsForCurrentMouseLocation() {
@@ -481,7 +530,7 @@ final class DesktopWindowControlsController {
     }
 
     private func updatePanels(at mouseLocation: NSPoint) {
-        guard isRunning else { return }
+        guard isRunning, isFeatureMonitoringActive else { return }
         for panel in panelsByWindowID.values {
             panel.updateMouseLocation(
                 mouseLocation,
@@ -490,6 +539,7 @@ final class DesktopWindowControlsController {
                 hoverEnlargementEnabled: settings.desktopTrafficLightHoverEnlargementEnabled
             )
         }
+        updatePanelOcclusionTimer()
     }
 
     private func currentOcclusionApplicationState()
@@ -545,7 +595,13 @@ final class DesktopWindowControlsController {
     }
 
     private func refreshPanelOcclusionStates(force: Bool = false) {
-        guard isRunning, !panelsByWindowID.isEmpty else { return }
+        guard
+            isRunning,
+            isFeatureMonitoringActive,
+            !panelsByWindowID.isEmpty
+        else {
+            return
+        }
 
         let now = CACurrentMediaTime()
         let hasVisibleEnhancement = panelsByWindowID.values.contains {

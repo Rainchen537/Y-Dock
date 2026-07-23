@@ -454,6 +454,7 @@ final class OptionTabSwitcher {
     private let thumbnailProvider: WindowThumbnailProvider
     private let windowActivator: WindowActivator
     private let settings: AppSettings
+    private let eventMonitorHub: YNSEventMonitorHub
     private let focusHistory = WindowFocusHistory()
     private lazy var panel: OptionTabPanel = {
         let panel = OptionTabPanel()
@@ -469,15 +470,12 @@ final class OptionTabSwitcher {
     private var eventHandler: EventHandlerRef?
     private var forwardHotKey: EventHotKeyRef?
     private var backwardHotKey: EventHotKeyRef?
-    private var globalFlagsMonitor: Any?
-    private var localFlagsMonitor: Any?
+    private var globalEventSubscription: YMonitoringSubscription?
+    private var localEventObserver: YMonitoringSubscription?
+    private var localEventInterceptor: YMonitoringSubscription?
     private var escapeEventTap: CFMachPort?
     private var escapeEventTapSource: CFRunLoopSource?
     private var suppressedKeyCodes: Set<Int64> = []
-    private var globalKeyUpMonitor: Any?
-    private var localKeyUpMonitor: Any?
-    private var globalMouseMonitor: Any?
-    private var localMouseMonitor: Any?
     private var isStarted = false
     private var isSwitching = false
     private var items: [OptionTabItem] = []
@@ -498,12 +496,14 @@ final class OptionTabSwitcher {
         windowCollector: WindowCollector,
         thumbnailProvider: WindowThumbnailProvider,
         windowActivator: WindowActivator,
-        settings: AppSettings
+        settings: AppSettings,
+        eventMonitorHub: YNSEventMonitorHub
     ) {
         self.windowCollector = windowCollector
         self.thumbnailProvider = thumbnailProvider
         self.windowActivator = windowActivator
         self.settings = settings
+        self.eventMonitorHub = eventMonitorHub
     }
 
     func start() {
@@ -512,7 +512,7 @@ final class OptionTabSwitcher {
         installHotKeyHandler()
         registerHotKeys()
         installEscapeEventTap()
-        installFlagsMonitors()
+        installEventSubscriptions()
         isStarted = true
         DWLog("Option+Tab switcher started")
     }
@@ -530,43 +530,24 @@ final class OptionTabSwitcher {
         if let eventHandler {
             RemoveEventHandler(eventHandler)
         }
-        if let globalFlagsMonitor {
-            NSEvent.removeMonitor(globalFlagsMonitor)
-        }
-        if let localFlagsMonitor {
-            NSEvent.removeMonitor(localFlagsMonitor)
-        }
+        globalEventSubscription?.cancel()
+        localEventObserver?.cancel()
+        localEventInterceptor?.cancel()
         if let escapeEventTap {
             CGEvent.tapEnable(tap: escapeEventTap, enable: false)
         }
         if let escapeEventTapSource {
             CFRunLoopRemoveSource(CFRunLoopGetMain(), escapeEventTapSource, .commonModes)
         }
-        if let globalKeyUpMonitor {
-            NSEvent.removeMonitor(globalKeyUpMonitor)
-        }
-        if let localKeyUpMonitor {
-            NSEvent.removeMonitor(localKeyUpMonitor)
-        }
-        if let globalMouseMonitor {
-            NSEvent.removeMonitor(globalMouseMonitor)
-        }
-        if let localMouseMonitor {
-            NSEvent.removeMonitor(localMouseMonitor)
-        }
-
         forwardHotKey = nil
         backwardHotKey = nil
         eventHandler = nil
-        globalFlagsMonitor = nil
-        localFlagsMonitor = nil
+        globalEventSubscription = nil
+        localEventObserver = nil
+        localEventInterceptor = nil
         escapeEventTapSource = nil
         escapeEventTap = nil
         suppressedKeyCodes.removeAll()
-        globalKeyUpMonitor = nil
-        localKeyUpMonitor = nil
-        globalMouseMonitor = nil
-        localMouseMonitor = nil
         focusHistory.stop()
         isStarted = false
     }
@@ -683,43 +664,62 @@ final class OptionTabSwitcher {
         return true
     }
 
-    private func installFlagsMonitors() {
-        globalFlagsMonitor = NSEvent.addGlobalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
-            DispatchQueue.main.async {
-                self?.handleFlagsChanged(event.modifierFlags)
+    private func installEventSubscriptions() {
+        let mask: NSEvent.EventTypeMask = [
+            .flagsChanged,
+            .keyUp,
+            .leftMouseDown,
+            .rightMouseDown,
+            .otherMouseDown
+        ]
+
+        globalEventSubscription = eventMonitorHub.observeGlobal(
+            matching: mask,
+            priority: 200
+        ) { [weak self] event in
+            switch event.type {
+            case .flagsChanged:
+                DispatchQueue.main.async {
+                    self?.handleFlagsChanged(event.modifierFlags)
+                }
+            case .keyUp:
+                DispatchQueue.main.async {
+                    self?.handleKeyUp(event)
+                }
+            case .leftMouseDown, .rightMouseDown, .otherMouseDown:
+                DispatchQueue.main.async {
+                    _ = self?.handleMouseDown()
+                }
+            default:
+                break
             }
         }
 
-        localFlagsMonitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
+        localEventObserver = eventMonitorHub.observeLocal(
+            matching: .flagsChanged,
+            priority: 200
+        ) { [weak self] event in
             self?.handleFlagsChanged(event.modifierFlags)
-            return event
         }
 
-        globalKeyUpMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyUp) { [weak self] event in
-            DispatchQueue.main.async {
-                self?.handleKeyUp(event)
+        let interceptMask: NSEvent.EventTypeMask = [
+            .keyUp,
+            .leftMouseDown,
+            .rightMouseDown,
+            .otherMouseDown
+        ]
+        localEventInterceptor = eventMonitorHub.interceptLocal(
+            matching: interceptMask,
+            priority: 200
+        ) { [weak self] event in
+            switch event.type {
+            case .keyUp:
+                return self?.handleKeyUp(event) == true ? .consume : .passThrough
+            case .leftMouseDown, .rightMouseDown, .otherMouseDown:
+                return self?.handleMouseDown() == true ? .consume : .passThrough
+            default:
+                return .passThrough
             }
-        }
-
-        localKeyUpMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyUp) { [weak self] event in
-            if self?.handleKeyUp(event) == true {
-                return nil
-            }
-            return event
-        }
-
-        let mouseMask: NSEvent.EventTypeMask = [.leftMouseDown, .rightMouseDown, .otherMouseDown]
-        globalMouseMonitor = NSEvent.addGlobalMonitorForEvents(matching: mouseMask) { [weak self] _ in
-            DispatchQueue.main.async {
-                _ = self?.handleMouseDown()
-            }
-        }
-
-        localMouseMonitor = NSEvent.addLocalMonitorForEvents(matching: mouseMask) { [weak self] event in
-            if self?.handleMouseDown() == true {
-                return nil
-            }
-            return event
         }
     }
 

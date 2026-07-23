@@ -2,6 +2,13 @@
 
 All notable Y-Dock release changes are tracked here.
 
+## v1.1.24 - 2026-07-24
+
+- Consolidated Y-Dock's five global and five local AppKit event monitors into one process-local global monitor and one local monitor, while preserving the dedicated Carbon hotkeys and synchronous Esc `CGEventTap`.
+- Added the vendored Y-Project Monitoring framework with stable subscription ordering, local observer/interceptor separation, lifecycle diagnostics, and standalone arm64/x86_64 routing tests.
+- Stopped desktop traffic-light mouse subscriptions and descriptor timers while the feature is disabled, and now runs the 30 Hz occlusion timer only while an enhancement button is actually visible.
+- Hardened release validation so Setting, Permission, Monitoring, and DMG framework inputs must all be repository-local non-symlink sources.
+
 ## v1.1.23 - 2026-07-23
 
 - Restored Dock preview-card controls to their pre-v1.1.21 behavior; desktop traffic-light settings no longer alter, hide, enlarge, or reroute the controls inside Dock preview cards.

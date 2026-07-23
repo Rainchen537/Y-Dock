@@ -19,8 +19,9 @@ final class MouseTracker {
     private let dockInspector: DockInspector
     private let windowCollector: WindowCollector
     private let settings: AppSettings
-    private var globalMonitor: Any?
-    private var localMonitor: Any?
+    private let eventMonitorHub: YNSEventMonitorHub
+    private var globalEventSubscription: YMonitoringSubscription?
+    private var localEventSubscription: YMonitoringSubscription?
     private var workspaceActivationObserver: NSObjectProtocol?
     private var settingsObserver: NSObjectProtocol?
     private var topmostSnapshotRefreshWorkItem: DispatchWorkItem?
@@ -57,15 +58,19 @@ final class MouseTracker {
     init(
         dockInspector: DockInspector,
         windowCollector: WindowCollector,
-        settings: AppSettings = .shared
+        settings: AppSettings = .shared,
+        eventMonitorHub: YNSEventMonitorHub
     ) {
         self.dockInspector = dockInspector
         self.windowCollector = windowCollector
         self.settings = settings
+        self.eventMonitorHub = eventMonitorHub
     }
 
     func start() {
-        guard globalMonitor == nil, localMonitor == nil else { return }
+        guard globalEventSubscription == nil, localEventSubscription == nil else {
+            return
+        }
 
         let mask: NSEvent.EventTypeMask = [
             .mouseMoved,
@@ -77,13 +82,18 @@ final class MouseTracker {
             .otherMouseDown,
             .keyDown
         ]
-        globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: mask) { [weak self] event in
+        globalEventSubscription = eventMonitorHub.observeGlobal(
+            matching: mask,
+            priority: 100
+        ) { [weak self] event in
             self?.handleMouseEvent(event)
         }
 
-        localMonitor = NSEvent.addLocalMonitorForEvents(matching: mask) { [weak self] event in
+        localEventSubscription = eventMonitorHub.observeLocal(
+            matching: mask,
+            priority: 100
+        ) { [weak self] event in
             self?.handleMouseEvent(event)
-            return event
         }
 
         currentFrontmostApplicationPID =
@@ -115,20 +125,16 @@ final class MouseTracker {
     }
 
     func stop() {
-        if let globalMonitor {
-            NSEvent.removeMonitor(globalMonitor)
-        }
-        if let localMonitor {
-            NSEvent.removeMonitor(localMonitor)
-        }
+        globalEventSubscription?.cancel()
+        localEventSubscription?.cancel()
         if let workspaceActivationObserver {
             NSWorkspace.shared.notificationCenter.removeObserver(workspaceActivationObserver)
         }
         if let settingsObserver {
             NotificationCenter.default.removeObserver(settingsObserver)
         }
-        globalMonitor = nil
-        localMonitor = nil
+        globalEventSubscription = nil
+        localEventSubscription = nil
         workspaceActivationObserver = nil
         settingsObserver = nil
         resetPreClickTopmostSnapshots()

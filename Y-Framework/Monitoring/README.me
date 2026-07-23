@@ -1,0 +1,46 @@
+# Y-Framework Monitoring
+
+`YMonitoringFramework.swift` 为 Y-Project 的 macOS App 提供同一进程内的
+`NSEvent` 聚合。每个 App 仍是独立进程、独立安装包、独立权限主体，不通过
+XPC、LaunchAgent 或共享守护进程跨 App 分发事件。
+
+当前框架版本：`1.0.0`，由 `YMonitoringFrameworkVersion.current` 暴露。
+
+## 适用范围
+
+- 一个 App 创建一个 `YNSEventMonitorHub`。
+- 各业务模块通过 `observeGlobal` / `observeLocal` 注册观察，通过
+  `interceptLocal` 注册需要同步消费的本地事件。
+- 模块全部完成订阅后再调用 `start()`；退出时先调用 `stop()`，再取消模块订阅。
+- Hub 将所有 mask 合并，使一个 App 最多只保留一个原生 global monitor 和一个
+  原生 local monitor。
+- local observer 会先全部收到事件；之后 local interceptor 按 priority 从小
+  到大、同 priority 按注册顺序执行。interceptor 返回 `.consume` 后停止后续
+  interceptor，并向 AppKit 返回 `nil`，但不会让普通 observer 丢失状态更新。
+- global handler 只能观察，不具备吞掉系统事件的能力。
+- 订阅 token 必须由业务模块持有；`cancel()` 幂等，token 释放时也会取消订阅。
+- 生命周期、订阅变更和 diagnostics 读取都在主线程执行。
+
+运行中取消订阅只会停止业务分发；只要仍有其他订阅，原生 monitor 不因 mask
+缩小而频繁重装。新增事件类型时才扩展原生 mask，所有订阅清空或 Hub 停止时
+移除原生 monitor，以降低事件空窗和反复注册。
+
+## 明确不做
+
+- 不跨 App 共享监听进程。
+- 不替代需要同步抑制的 `CGEventTap`。
+- 不替代 Carbon `RegisterEventHotKey`。
+- 不聚合 Accessibility `AXObserver`、`NSWorkspace` 通知、ScreenCaptureKit /
+  CoreGraphics 截图流或剪贴板轮询。
+- 不负责申请 Accessibility、Input Monitoring 或 Screen Recording 权限。
+- 不记录或输出原始按键、鼠标轨迹、窗口标题、剪贴板内容和屏幕帧。
+
+高频回调只进行轻量分发。鼠标节流、窗口扫描、AX 查询、截图、缓存和业务状态
+仍由各 App 自己负责。
+
+## Vendoring
+
+根目录 `Y-Framework/Monitoring/` 是模板主副本。实际接入的独立 App 仓库必须
+把该目录复制到仓库内 `Y-Framework/Monitoring/`，禁止使用 symlink；构建系统
+必须引用仓库内副本，确保单独 clone 后可以构建。未接入的 App 不需要仅为同步
+模板而产生版本或发布。

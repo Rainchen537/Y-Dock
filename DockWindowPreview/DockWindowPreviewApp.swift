@@ -5,6 +5,7 @@ final class DockWindowPreviewApp: NSObject, NSApplicationDelegate {
     private static var retainedDelegate: DockWindowPreviewApp?
 
     private let settings = AppSettings.shared
+    private let eventMonitorHub = YNSEventMonitorHub()
     private let permissionsManager = PermissionsManager()
     private let windowCollector = WindowCollector()
     private let thumbnailProvider = WindowThumbnailProvider()
@@ -12,7 +13,10 @@ final class DockWindowPreviewApp: NSObject, NSApplicationDelegate {
     private let dockInspector = DockInspector()
     private let updateChecker = UpdateChecker.shared
     private lazy var desktopWindowControlsController =
-        DesktopWindowControlsController(settings: settings)
+        DesktopWindowControlsController(
+            settings: settings,
+            eventMonitorHub: eventMonitorHub
+        )
 
     private struct PreviewContext {
         let appPID: pid_t
@@ -66,7 +70,8 @@ final class DockWindowPreviewApp: NSObject, NSApplicationDelegate {
         let tracker = MouseTracker(
             dockInspector: dockInspector,
             windowCollector: windowCollector,
-            settings: settings
+            settings: settings,
+            eventMonitorHub: eventMonitorHub
         )
         tracker.isPointInsidePreviewPanel = { [weak self] point in
             self?.previewPanel.containsScreenPoint(point) ?? false
@@ -102,7 +107,8 @@ final class DockWindowPreviewApp: NSObject, NSApplicationDelegate {
         windowCollector: windowCollector,
         thumbnailProvider: thumbnailProvider,
         windowActivator: windowActivator,
-        settings: settings
+        settings: settings,
+        eventMonitorHub: eventMonitorHub
     )
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -124,6 +130,23 @@ final class DockWindowPreviewApp: NSObject, NSApplicationDelegate {
         mouseTracker.start()
         optionTabSwitcher.start()
         desktopWindowControlsController.start()
+        let eventMonitoringStarted = eventMonitorHub.start()
+        let diagnostics = eventMonitorHub.diagnostics
+        if eventMonitoringStarted {
+            DWLog(
+                "Consolidated NSEvent monitors active "
+                    + "(global: \(diagnostics.nativeGlobalMonitorInstalled), "
+                    + "local: \(diagnostics.nativeLocalMonitorInstalled), "
+                    + "subscriptions: \(diagnostics.globalSubscriptionCount)"
+                    + "/\(diagnostics.localSubscriptionCount))"
+            )
+        } else {
+            DWLog(
+                "Failed to install consolidated NSEvent monitors "
+                    + "(global subscriptions: \(diagnostics.globalSubscriptionCount), "
+                    + "local subscriptions: \(diagnostics.localSubscriptionCount))"
+            )
+        }
         scheduleStartupUpdateCheck()
         DWLog("\(AppBranding.displayName) launched")
     }
@@ -140,6 +163,7 @@ final class DockWindowPreviewApp: NSObject, NSApplicationDelegate {
         cancelDockContextMenuProtectionTimer()
         dockPrimaryClickWorkItem?.cancel()
         dockPrimaryClickWorkItem = nil
+        eventMonitorHub.stop()
         desktopWindowControlsController.stop()
         optionTabSwitcher.stop()
         mouseTracker.stop()

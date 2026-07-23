@@ -110,26 +110,40 @@ staple_with_retry() {
 
 assert_vendored_release_inputs() {
   local framework_dir="$ROOT_DIR/Y-Framework/DMG"
-  local -a symlinks
+  local component component_dir
+  local -a components symlinks
 
   if [[ ! -d "$ROOT_DIR/Y-Framework" || -L "$ROOT_DIR/Y-Framework" ]]; then
     echo "✗ 正式发布要求仓库内非符号链接 Y-Framework 根目录。" >&2
     return 1
   fi
-  if [[ ! -d "$framework_dir" || -L "$framework_dir" ]]; then
-    echo "✗ 正式发布要求仓库内非符号链接 DMG 框架目录：$framework_dir" >&2
-    return 1
-  fi
-  symlinks=("$framework_dir"/**/*(N@))
-  if (( ${#symlinks[@]} != 0 )); then
-    echo "✗ 正式发布的 vendored DMG 框架不得包含符号链接：${symlinks[1]}" >&2
-    return 1
-  fi
+  components=(DMG Setting Permission Monitoring)
+  for component in "${components[@]}"; do
+    component_dir="$ROOT_DIR/Y-Framework/$component"
+    if [[ ! -d "$component_dir" || -L "$component_dir" ]]; then
+      echo "✗ 正式发布要求仓库内非符号链接 $component 框架目录：$component_dir" >&2
+      return 1
+    fi
+    symlinks=("$component_dir"/**/*(N@))
+    if (( ${#symlinks[@]} != 0 )); then
+      echo "✗ 正式发布的 vendored $component 框架不得包含符号链接：${symlinks[1]}" >&2
+      return 1
+    fi
+  done
   if [[ ! -f "$framework_dir/YDMGFramework.zsh" ||
         -L "$framework_dir/YDMGFramework.zsh" ||
         ! -f "$framework_dir/DmgBackgroundGenerator.swift" ||
         -L "$framework_dir/DmgBackgroundGenerator.swift" ]]; then
     echo "✗ 正式发布缺少仓库内 vendored DMG 框架脚本或背景生成器。" >&2
+    return 1
+  fi
+  if [[ ! -f "$ROOT_DIR/Y-Framework/Setting/YSettingsFramework.swift" ||
+        -L "$ROOT_DIR/Y-Framework/Setting/YSettingsFramework.swift" ||
+        ! -f "$ROOT_DIR/Y-Framework/Permission/YPermissionPromptFramework.swift" ||
+        -L "$ROOT_DIR/Y-Framework/Permission/YPermissionPromptFramework.swift" ||
+        ! -f "$ROOT_DIR/Y-Framework/Monitoring/YMonitoringFramework.swift" ||
+        -L "$ROOT_DIR/Y-Framework/Monitoring/YMonitoringFramework.swift" ]]; then
+    echo "✗ 正式发布缺少仓库内 Setting、Permission 或 Monitoring Swift 源码。" >&2
     return 1
   fi
 }
@@ -343,7 +357,7 @@ validate_staple() {
 }
 
 run_standalone_tests() {
-  local sdk test_dir architecture selector_test_binary policy_test_binary actual_architecture
+  local sdk test_dir architecture selector_test_binary policy_test_binary monitor_test_binary actual_architecture
   sdk="$(xcrun --sdk macosx --show-sdk-path)"
   test_dir="$WORK_ROOT/tests"
   mkdir -p "$test_dir"
@@ -378,6 +392,22 @@ run_standalone_tests() {
     fi
     "$policy_test_binary"
     rm -f "$policy_test_binary"
+
+    monitor_test_binary="$test_dir/YMonitoringFrameworkTests-$architecture"
+    xcrun swiftc \
+      -target "$architecture-apple-macos13.0" \
+      -sdk "$sdk" \
+      -framework AppKit \
+      "$ROOT_DIR/Y-Framework/Monitoring/YMonitoringFramework.swift" \
+      "$ROOT_DIR/Tests/YMonitoringFrameworkTests.swift" \
+      -o "$monitor_test_binary"
+    actual_architecture="$(/usr/bin/lipo -archs "$monitor_test_binary" | /usr/bin/xargs)"
+    if [[ "$actual_architecture" != "$architecture" ]]; then
+      echo "✗ monitoring framework 测试应编译为 $architecture，实际为：$actual_architecture" >&2
+      return 1
+    fi
+    "$monitor_test_binary"
+    rm -f "$monitor_test_binary"
   done
   rmdir "$test_dir"
 }
