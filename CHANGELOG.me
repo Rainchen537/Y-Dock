@@ -12,6 +12,7 @@
 - 桌面窗口红绿灯关闭时不再安装其 mouse 订阅和 `0.45s` descriptor timer；功能启用后动态接入共享 Hub，关闭时立即取消 pending refresh、订阅和 panel。原先常驻唤醒的 30 Hz occlusion timer 改为只在至少一颗增强按钮实际可见时创建，最后一颗隐藏后立即失效。
 - 新增 `YMonitoringFrameworkTests` fake backend standalone 测试，覆盖单一原生 monitor、mask union/filter、observer-before-interceptor、消费、回调中取消快照、幂等 start/stop 与 restart；`release.sh` 对 arm64/x86_64 均编译运行该测试，并要求 vendored Setting、Permission、Monitoring、DMG 框架全部是仓库内非符号链接真实源码。
 - 新增并维护 `log.md`、`ver.md`，记录本轮工作和 `1.1.24 (49)` / Monitoring `1.0.0` 版本关系；用户原有 `.claude/`、`OptionTabSwitcher 2.swift`、`PreviewPanel 2.swift` 未跟踪内容保持未修改且不纳入本轮提交。
+- 从干净 worktree 执行正式发布时，arm64 App 已完成 Developer ID 签名、独立公证、staple 与 Gatekeeper 验证；后续 arm64 DMG submission `b67340e1-105d-4492-9ae8-293cd7b9cc8a` 在 Apple 端持续约一小时仍为 `In Progress`，故安全中止本地流程并清理大型缓存。当前没有成套最终 DMG、`v1.1.24` tag 或 GitHub Release，也未替换本机安装版，不得视为已发布。
 
 ## 2026-07-23
 

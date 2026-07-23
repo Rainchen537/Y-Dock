@@ -18,4 +18,13 @@
   `1 global + 1 local`；测试后已关闭所有 Y-Dock 实例并恢复用户偏好。
 - 临时未安装构建因签名身份不匹配无法复用安装版的 Esc event-tap 权限；该路径
   留待最终签名、公证并从 DMG 安装后复核，不能据此宣称正式交互验证完成。
-- 正式发布结果在完成后继续追加。
+- 正式发布从提交 `45ebaf3` 的干净 worktree 启动：双架构 standalone
+  测试再次通过，arm64 Debug/Release、Developer ID 签名、App 独立公证、
+  staple 与 Gatekeeper 验证均通过，App 公证 submission ID 为
+  `cfafdec8-f7ea-4181-9267-2a4735013039`。
+- arm64 DMG 已生成、签名并提交 Apple，submission ID
+  `b67340e1-105d-4492-9ae8-293cd7b9cc8a` 在持续约一小时后仍由 Apple
+  返回 `In Progress`。本地发布脚本已安全中止并清理 DerivedData、stage 与
+  release lock，仅在临时目录保留该 DMG 和 notary 日志供续查；未生成最终
+  成套 `dist`、未创建 `v1.1.24` tag、未上传 GitHub Release、未替换
+  `/Applications/Y-Dock.app`，因此不得宣称 `v1.1.24` 已正式发布。
