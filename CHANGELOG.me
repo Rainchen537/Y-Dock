@@ -9,6 +9,7 @@
 - 准备发布 `v1.1.24 (49)`：新增并 vendoring `Y-Framework/Monitoring` v1.0.0，在 Y-Dock 内创建单一 `YNSEventMonitorHub`，将 MouseTracker、OptionTabSwitcher、DesktopWindowControlsController 原有 `5 global + 5 local` AppKit monitor 收敛为一个 global 和一个 local 原生 monitor。
 - Monitoring Hub 对 global/local mask 求并集并按稳定顺序过滤分发；所有 local observer 先更新业务状态，再由独立 interceptor 汇总消费结果。Option+Tab 的 Tab key-up 与本进程 outside-click 继续可同步返回 `nil`，但不会阻断 MouseTracker 或 Desktop controls 的状态维护。
 - Carbon `Option+Tab` 热键、Esc 同步抑制 `CGEventTap`、每 PID AXObserver、Workspace 通知、窗口截图与业务 Timer 保持原模块本地所有权；共享框架不跨 App、无 XPC/LaunchAgent，不申请权限，也不记录原始按键、鼠标轨迹、窗口标题、剪贴板或屏幕帧。
+- 修复正式安装版启动后键盘输入和系统交互偶发卡顿：此前 Esc 的过滤型 `CGEventTap` 在 Option+Tab 未打开时也常驻主线程并同步经过全部 key-down/key-up，Y-Dock 主线程短暂停顿会反压系统输入。现在启动与普通运行期间不创建/启用该 tap，只在 Option+Tab 会话开始前启用，提交、取消或吞完对应 Esc key-up 后立即停用；非活动状态遇到 timeout/user-input disable 通知也不会自行重启 tap。
 - 桌面窗口红绿灯关闭时不再安装其 mouse 订阅和 `0.45s` descriptor timer；功能启用后动态接入共享 Hub，关闭时立即取消 pending refresh、订阅和 panel。原先常驻唤醒的 30 Hz occlusion timer 改为只在至少一颗增强按钮实际可见时创建，最后一颗隐藏后立即失效。
 - 新增 `YMonitoringFrameworkTests` fake backend standalone 测试，覆盖单一原生 monitor、mask union/filter、observer-before-interceptor、消费、回调中取消快照、幂等 start/stop 与 restart；`release.sh` 对 arm64/x86_64 均编译运行该测试，并要求 vendored Setting、Permission、Monitoring、DMG 框架全部是仓库内非符号链接真实源码。
 - 新增并维护 `log.md`、`ver.md`，记录本轮工作和 `1.1.24 (49)` / Monitoring `1.0.0` 版本关系；用户原有 `.claude/`、`OptionTabSwitcher 2.swift`、`PreviewPanel 2.swift` 未跟踪内容保持未修改且不纳入本轮提交。

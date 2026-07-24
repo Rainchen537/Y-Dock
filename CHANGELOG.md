@@ -5,6 +5,7 @@ All notable Y-Dock release changes are tracked here.
 ## v1.1.24 - 2026-07-24
 
 - Consolidated Y-Dock's five global and five local AppKit event monitors into one process-local global monitor and one local monitor, while preserving the dedicated Carbon hotkeys and synchronous Esc `CGEventTap`.
+- Fixed system-wide keyboard and intermittent interaction stalls after Y-Dock launch by keeping the synchronous Esc event tap disabled outside an active `Option+Tab` session; it now activates only for the switcher and disables again after commit, cancellation, or the matching Esc key-up.
 - Added the vendored Y-Project Monitoring framework with stable subscription ordering, local observer/interceptor separation, lifecycle diagnostics, and standalone arm64/x86_64 routing tests.
 - Stopped desktop traffic-light mouse subscriptions and descriptor timers while the feature is disabled, and now runs the 30 Hz occlusion timer only while an enhancement button is actually visible.
 - Hardened release validation so Setting, Permission, Monitoring, and DMG framework inputs must all be repository-local non-symlink sources.

@@ -511,7 +511,6 @@ final class OptionTabSwitcher {
         focusHistory.start()
         installHotKeyHandler()
         registerHotKeys()
-        installEscapeEventTap()
         installEventSubscriptions()
         isStarted = true
         DWLog("Option+Tab switcher started")
@@ -629,11 +628,11 @@ final class OptionTabSwitcher {
     }
 
     @discardableResult
-    private func installEscapeEventTap() -> Bool {
+    private func activateEscapeEventTap() -> Bool {
         if let escapeEventTap,
-           CFMachPortIsValid(escapeEventTap),
-           CGEvent.tapIsEnabled(tap: escapeEventTap) {
-            return true
+           CFMachPortIsValid(escapeEventTap) {
+            CGEvent.tapEnable(tap: escapeEventTap, enable: true)
+            return CGEvent.tapIsEnabled(tap: escapeEventTap)
         }
 
         if let escapeEventTapSource {
@@ -661,7 +660,15 @@ final class OptionTabSwitcher {
             CFRunLoopAddSource(CFRunLoopGetMain(), escapeEventTapSource, .commonModes)
         }
         CGEvent.tapEnable(tap: tap, enable: true)
-        return true
+        return CGEvent.tapIsEnabled(tap: tap)
+    }
+
+    private func deactivateEscapeEventTapIfIdle() {
+        guard !isSwitching, suppressedKeyCodes.isEmpty else { return }
+        guard let escapeEventTap, CFMachPortIsValid(escapeEventTap) else {
+            return
+        }
+        CGEvent.tapEnable(tap: escapeEventTap, enable: false)
     }
 
     private func installEventSubscriptions() {
@@ -724,9 +731,13 @@ final class OptionTabSwitcher {
     }
 
     private func handleHotKey(id: UInt32) {
-        guard installEscapeEventTap() else {
+        guard activateEscapeEventTap() else {
             NSSound.beep()
             return
+        }
+
+        defer {
+            deactivateEscapeEventTapIfIdle()
         }
 
         switch HotKeyID(rawValue: id) {
@@ -754,7 +765,8 @@ final class OptionTabSwitcher {
 
     private func shouldSuppressEscapeEvent(type: CGEventType, event: CGEvent) -> Bool {
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
-            if let escapeEventTap {
+            if isSwitching || !suppressedKeyCodes.isEmpty,
+               let escapeEventTap {
                 CGEvent.tapEnable(tap: escapeEventTap, enable: true)
             }
             return false
@@ -773,7 +785,9 @@ final class OptionTabSwitcher {
             cancelSelection()
             return true
         case .keyUp:
-            return suppressedKeyCodes.remove(keyCode) != nil
+            let wasSuppressed = suppressedKeyCodes.remove(keyCode) != nil
+            deactivateEscapeEventTapIfIdle()
+            return wasSuppressed
         default:
             return false
         }
@@ -910,6 +924,7 @@ final class OptionTabSwitcher {
         items = []
         excludedWindowIDs.removeAll()
         selectedIndex = 0
+        deactivateEscapeEventTapIfIdle()
     }
 
     private func beginTabRepeat(direction: Int) {

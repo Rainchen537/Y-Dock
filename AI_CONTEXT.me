@@ -21,7 +21,7 @@ Core behavior:
 - The status item uses a transparent `18 x 18` template image with two offset window outlines and a rounded Dock line, keeping the window-preview function recognizable in both light and dark menu bars.
 - Watches global mouse movement and performs best-effort Dock icon hit testing through Accessibility.
 - Uses one process-local `YNSEventMonitorHub` to aggregate all AppKit global/local event subscriptions. MouseTracker, OptionTabSwitcher, and DesktopWindowControlsController do not install separate `NSEvent` monitors; local observers update state before the Option+Tab interceptor may consume an event.
-- Keeps Carbon `Option+Tab`, the synchronous Esc `CGEventTap`, AXObserver focus history, workspace notifications, window capture, and timers under their existing business owners rather than routing them through the generic monitor Hub.
+- Keeps Carbon `Option+Tab`, the synchronous Esc `CGEventTap`, AXObserver focus history, workspace notifications, window capture, and timers under their existing business owners rather than routing them through the generic monitor Hub. The Esc event tap must stay disabled outside an active switcher session so a busy Y-Dock main run loop can never gate ordinary system keyboard input; enable it immediately before opening the switcher, retain it through a suppressed Esc key-up, then disable it after commit or cancellation.
 - Shows an AppKit `NSPanel` preview near Dock icons with one card per window.
 - Registers `Option+Tab` with public Carbon hotkey APIs for a Windows-style window switcher.
 - Keeps preview UI lightweight: show panels quickly, then fill thumbnails from background queues where possible.
@@ -58,7 +58,7 @@ Core behavior:
 - `DockWindowPreview/WindowThumbnailProvider.swift`: thumbnail capture, cache, and fallback thumbnails.
 - `DockWindowPreview/PreviewPanel.swift`: AppKit preview panel UI and card interactions.
 - `DockWindowPreview/FocusOverlayPanel.swift`: lightweight visual focus overlay for hovered thumbnails.
-- `DockWindowPreview/OptionTabSwitcher.swift`: global `Option+Tab` hotkey, centered switcher panel, and selection lifecycle.
+- `DockWindowPreview/OptionTabSwitcher.swift`: global `Option+Tab` hotkey, centered switcher panel, selection lifecycle, and session-scoped Esc event-tap activation.
 - `DockWindowPreview/WindowActivator.swift`: AX-based focus, raise, close, restore, graceful quit, and batch one-to-one window minimization with explicit-ID-first matching.
 - `DockWindowPreview/SettingsWindow.swift`: independent settings window business controller, using `Y-Framework/Setting` for the shared settings shell and controls; it presents runtime-copy diagnostics and the three-state Screen Recording UI.
 - `DockWindowPreview/PermissionsManager.swift`: Accessibility and Screen Recording state, app-scoped TCC refresh, shared Permission descriptor injection, signed installed-copy validation, and restart/switch actions.

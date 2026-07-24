@@ -16,8 +16,17 @@
 - 单实例运行日志确认桌面增强关闭时业务订阅为 `2 global / 3 local`、开启时为
   `3 global / 4 local`，两种状态的底层原生 monitor 均保持为
   `1 global + 1 local`；测试后已关闭所有 Y-Dock 实例并恢复用户偏好。
-- 临时未安装构建因签名身份不匹配无法复用安装版的 Esc event-tap 权限；该路径
-  留待最终签名、公证并从 DMG 安装后复核，不能据此宣称正式交互验证完成。
+- 收到正式安装版一启动即造成键盘输入卡顿、系统交互偶发卡顿的反馈后，现场读取
+  `CGGetEventTapList`：空闲 Y-Dock 仅约 `0% CPU`，但其同步键盘 tap 已被
+  macOS 自动置为 `enabled=false`，符合常驻主线程 tap 超时后由系统保护性停用
+  的症状。修复为启动时零键盘 tap、仅在 Option+Tab 会话内临时启用。
+- arm64 Debug/Release 修复版均构建通过。用相同 Developer ID 签名并放到
+  `/Applications/Y-Dock.app` 后做真实 Carbon 热键路径验证：启动空闲时
+  `idle_tap_count=0`；真实 Option+Tab 触发后 tap 对象按需创建，Option 松开后
+  保留对象但 `enabled=false`，普通键盘输入不再经过同步拦截器。旧
+  `1.1.23` 安装包完整保存在
+  `/Applications/Y-Dock.app.pre-runtime-test-1.1.23`，当前测试副本仍不是
+  最终公证 DMG 安装结果。
 - 正式发布从提交 `45ebaf3` 的干净 worktree 启动：双架构 standalone
   测试再次通过，arm64 Debug/Release、Developer ID 签名、App 独立公证、
   staple 与 Gatekeeper 验证均通过，App 公证 submission ID 为
