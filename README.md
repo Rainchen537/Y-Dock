@@ -13,7 +13,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Rainchen537/Y-Dock/releases/tag/v1.1.24">
+  <a href="https://github.com/Rainchen537/Y-Dock/releases/tag/v1.1.25">
     <img alt="Release" src="https://img.shields.io/github/v/release/Rainchen537/Y-Dock?style=for-the-badge&color=1f8fff">
   </a>
   <img alt="macOS" src="https://img.shields.io/badge/macOS-13%2B-111827?style=for-the-badge&logo=apple">
@@ -23,10 +23,10 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Rainchen537/Y-Dock/releases/download/v1.1.24/Y-Dock-v1.1.24-arm64.dmg">
+  <a href="https://github.com/Rainchen537/Y-Dock/releases/download/v1.1.25/Y-Dock-v1.1.25-arm64.dmg">
     <img alt="Download Apple Silicon DMG" src="https://img.shields.io/badge/Download-Apple%20Silicon-2563EB?style=for-the-badge&logo=apple">
   </a>
-  <a href="https://github.com/Rainchen537/Y-Dock/releases/download/v1.1.24/Y-Dock-v1.1.24-x86_64.dmg">
+  <a href="https://github.com/Rainchen537/Y-Dock/releases/download/v1.1.25/Y-Dock-v1.1.25-x86_64.dmg">
     <img alt="Download Intel DMG" src="https://img.shields.io/badge/Download-Intel-4B5563?style=for-the-badge&logo=apple">
   </a>
 </p>
@@ -46,22 +46,20 @@
 | ⌥ Option+Tab 切换 | 按住 `Option` 后按 `Tab` 呼出亚克力窗口切换器，严格按最近聚焦顺序排列并默认选择第二张（仅一张时选择第一张）；hover 卡片时可从左上角半透明 X 直接关闭对应窗口，按 `Esc` 安全取消。 |
 | 🚀 异步缩略图 | 首屏先显示轻量卡片，缩略图后台补齐，减少热键和 Dock 横扫卡顿。 |
 | 💤 唤回最小化窗口 | 被最小化的窗口也会出现在预览里，点击后自动恢复并置前。 |
-| 🎚 卡片窗口控制 | hover 某个 Dock 预览卡片，左上角继续显示原有的退出 App、关闭窗口、最小化窗口三颗控制按钮；桌面红绿灯设置不会改动预览卡片。 |
-| 🚦 桌面窗口红绿灯 | 在其他 App 的普通桌面窗口左上角提供三颗独立透明增强按钮；增强按钮可平时隐藏、进入控制区域后显示，悬浮时只放大当前单颗按钮，不绘制包围三颗按钮的整块遮罩。 |
-| ⏻ 桌面红钮策略 | 桌面窗口红色按钮可继续关闭当前窗口，也可按全部 App、黑名单或白名单请求正常退出所属 App；黑白名单独立保存，退出路径不强制终止进程。 |
+| 🎚 卡片窗口控制 | hover 某个 Dock 预览卡片，左上角可退出 App、关闭窗口或最小化窗口。 |
 | 🎯 临时聚焦预览 | hover 卡片超过 `50ms` 后，用轻量覆盖层突出当前窗口快照，不改变真实桌面状态。 |
-| 🎛 设置窗口 | 独立设置窗口采用左侧栏和右侧内容区，可调整悬停延迟、缩略图高度、Dock 点击、桌面红绿灯、桌面红钮策略、标题显示、开机启动和调试日志。 |
+| 🎛 设置窗口 | 独立设置窗口采用左侧栏和右侧内容区，可调整悬停延迟、缩略图高度、Dock 点击、标题显示、开机启动和调试日志。 |
 | ⬇️ 直接更新 | 检测到新版本后按当前编译架构精确选择 `arm64` 或 `x86_64` DMG，并要求下载 App 的内部版本与 GitHub Release 完全一致且严格高于当前版本；挂载源、同卷候选副本和最终安装路径都会验证身份、Developer ID、hardened runtime、签名、Gatekeeper 与严格 thin 架构。普通与管理员路径复用带固定互斥锁的 candidate + backup 原子事务；direct 安装器的 `READY\n` 必须随即关闭通道且不允许尾随内容。提权时只执行摘要匹配的 root-owned installer 和已重新验证的完整 helper App 副本，失败时保留或恢复有效 App。 |
 | 🛡️ 权限状态诊断 | 权限页区分屏幕录制“未开启 / 需要重启 / 已开启”，并提供对应的请求、重启或安装版切换操作。 |
 | 📍 正式安装版切换 | 区分正式安装版与开发副本，并可切换到签名验证通过的 `/Applications/Y-Dock.app`。 |
 | 🔐 公开 API 实现 | 使用 AppKit、Accessibility、CoreGraphics，不依赖 macOS 私有 API。 |
-| 🪶 低开销事件中心 | App 内多个业务模块共享一组 global/local 事件入口；桌面增强关闭时不保留其鼠标订阅和刷新计时器。 |
+| 🪶 低开销事件中心 | Dock 悬浮和 `Option+Tab` 共享一组 global/local 事件入口，不扫描或覆盖其他 App 的窗口控制按钮。 |
 
 ## 📦 安装
 
 1. 按 Mac 架构下载最新版 DMG：
-   - Apple Silicon（M 系列）：[Y-Dock-v1.1.24-arm64.dmg](https://github.com/Rainchen537/Y-Dock/releases/download/v1.1.24/Y-Dock-v1.1.24-arm64.dmg)
-   - Intel：[Y-Dock-v1.1.24-x86_64.dmg](https://github.com/Rainchen537/Y-Dock/releases/download/v1.1.24/Y-Dock-v1.1.24-x86_64.dmg)
+   - Apple Silicon（M 系列）：[Y-Dock-v1.1.25-arm64.dmg](https://github.com/Rainchen537/Y-Dock/releases/download/v1.1.25/Y-Dock-v1.1.25-arm64.dmg)
+   - Intel：[Y-Dock-v1.1.25-x86_64.dmg](https://github.com/Rainchen537/Y-Dock/releases/download/v1.1.25/Y-Dock-v1.1.25-x86_64.dmg)
 2. 打开对应架构的 DMG。
 3. 将 `Y-Dock.app` 拖到 `Applications`。
 4. 启动 `Y-Dock`，按提示开启权限。
@@ -100,9 +98,8 @@ System Settings
 3. 等待约 `100ms`，预览面板会自动弹出。
 4. 点击缩略图切换到对应窗口。
 5. hover 某张 Dock 预览卡片，左上角仍可按原有方式退出所属 App、关闭窗口或最小化窗口。
-6. 可在设置中启用桌面窗口红绿灯增强：Y-Dock 的三颗独立增强按钮可平时隐藏，鼠标进入目标窗口左上控制区域后显示；悬浮某一颗时只放大该按钮，三颗按钮外围不会出现整块背景或遮罩。红色按钮可按策略关闭当前窗口或请求正常退出所属 App。
-7. 可在设置中启用 Dock 点击最小化。目标 App 必须在点击前已经处于前台，且该 App 的普通用户窗口必须位于当前窗口堆栈最上层；其他 App 的窗口挡在上方时不会触发。点击后台 App 时只执行 macOS 原生激活，不会立即反向最小化。按住 `Control`、`Command`、`Option` 或 `Shift` 点击时也不会触发。
-8. 也可以按住 `Option` 并按 `Tab` 打开窗口切换器；首次呼出默认选中 MRU 列表的第二张，只有一张窗口时回退到第一张，继续按 `Tab` 循环，松开 `Option` 后切到当前选中的窗口。hover 某张卡片时，其左上角 App icon 会覆盖为半透明 X，点击可关闭该窗口且不会误激活卡片；关闭后其余列表继续可用。按 `Esc` 会取消并吞掉对应按键事件，不影响底层窗口。
+6. 可在设置中启用 Dock 点击最小化。目标 App 必须在点击前已经处于前台，且该 App 的普通用户窗口必须位于当前窗口堆栈最上层；其他 App 的窗口挡在上方时不会触发。点击后台 App 时只执行 macOS 原生激活，不会立即反向最小化。按住 `Control`、`Command`、`Option` 或 `Shift` 点击时也不会触发。
+7. 也可以按住 `Option` 并按 `Tab` 打开窗口切换器；首次呼出默认选中 MRU 列表的第二张，只有一张窗口时回退到第一张，继续按 `Tab` 循环，松开 `Option` 后切到当前选中的窗口。hover 某张卡片时，其左上角 App icon 会覆盖为半透明 X，点击可关闭该窗口且不会误激活卡片；关闭后其余列表继续可用。按 `Esc` 会取消并吞掉对应按键事件，不影响底层窗口。
 
 ## ⚙️ 设置
 
@@ -115,9 +112,6 @@ System Settings
 - `显示窗口标题`：控制预览卡片顶部标题栏。
 - `开机启动`：使用 macOS 官方 `SMAppService.mainApp`。
 - `Dock 点击`：关闭、仅单窗口 App、所有窗口三档；多窗口模式会最小化该 App 当前全部未最小化窗口。
-- `桌面红绿灯显示`：可让 Y-Dock 绘制的三颗独立增强按钮默认隐藏，仅在鼠标进入对应控制区域后显示；不会隐藏或修改其他进程的原生按钮。
-- `桌面红绿灯放大`：可开关单颗按钮 hover 放大，并在设置中调整和预览 `14–30pt` 的目标尺寸。
-- `桌面红钮策略`：可让桌面窗口红色按钮请求正常退出 App，并在全部 App、黑名单、白名单之间切换；两份名单独立持久化。
 - `窗口切换`：显示全局快捷键 `Option+Tab`。
 - `权限状态`：分别检查辅助功能和屏幕录制，并在屏幕录制授权需要进程重新载入时提供重启或安装版切换操作。
 - `当前副本`：诊断正式安装版与开发副本，只切换到签名验证通过的 `/Applications/Y-Dock.app`。
@@ -175,8 +169,6 @@ macOS 没有公开的 Dock hover API，也没有公开 API 可以从 Dock 图标
 hover 卡片时的“只看当前窗口”效果是公开 API 下的视觉模拟：App 会覆盖一层半透明面板并绘制当前窗口截图，不会真的隐藏其它窗口。
 
 `Option+Tab` 通过公开 Carbon HotKey API 注册全局快捷键，并用公开事件监听支持 `Esc` 取消。可同步过滤 Esc 的事件 tap 只在切换器会话期间启用，普通使用和键盘输入不会经过该拦截器。窗口聚焦仍依赖 Accessibility；如果缺少辅助功能权限，可能只能激活 App，无法稳定聚焦到精确窗口。
-
-macOS 没有公开 API 可直接改变其他进程原生红黄绿按钮的尺寸或可见性。桌面窗口红绿灯增强使用三颗相互独立、透明、非激活的 Y-Dock 面板在按钮位置绘制增强圆形，不修改原生按钮，也不会在三颗按钮外围绘制整块遮罩；只对能可靠匹配 CGWindow 与标准 AXWindow/控制按钮的普通窗口生效。前层普通窗口或浮动工具窗口遮住按钮命中范围、匹配不明确、窗口已全屏、正在外部拖动或动作前位置已变化时会保守隐藏或跳过。
 
 全屏 Space、Stage Manager、多显示器、Dock 自动隐藏和 Dock 放大可能影响命中测试和面板定位。
 

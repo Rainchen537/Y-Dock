@@ -15,11 +15,8 @@ private enum AppSettingsPolicyTests {
         testDockClickSnapshotRefreshPolicy()
         testDockClickTopmostWindowPolicy()
         testDockClickTimestampedSnapshots()
-        testDesktopClosePolicies()
-        testIndependentListPersistence()
-        testLegacyDesktopSettingsMigration()
         testInvalidRawValuesFallBackSafely()
-        testTrafficLightHoverSizeClamp()
+        testRemovedDesktopControlSettingsArePurged()
 
         guard failureCount == 0 else {
             fputs("\(failureCount) AppSettings/policy test(s) failed.\n", stderr)
@@ -309,207 +306,51 @@ private enum AppSettingsPolicyTests {
         )
     }
 
-    private static func testDesktopClosePolicies() {
-        let blacklist: Set<String> = ["com.example.blocked"]
-        let whitelist: Set<String> = ["com.example.allowed"]
-
-        expect(
-            DesktopCloseActionPolicy.action(
-                isEnabled: false,
-                mode: .all,
-                bundleIdentifier: "com.example.app",
-                hasRunningApplication: true,
-                blacklist: blacklist,
-                whitelist: whitelist
-            ) == .closeWindow,
-            "disabled quit policy must close the window"
-        )
-        expect(
-            DesktopCloseActionPolicy.action(
-                isEnabled: true,
-                mode: .all,
-                bundleIdentifier: nil,
-                hasRunningApplication: true,
-                blacklist: blacklist,
-                whitelist: whitelist
-            ) == .quitApplication,
-            "all mode may quit a known running app without a bundle ID"
-        )
-        expect(
-            DesktopCloseActionPolicy.action(
-                isEnabled: true,
-                mode: .blacklist,
-                bundleIdentifier: "com.example.blocked",
-                hasRunningApplication: true,
-                blacklist: blacklist,
-                whitelist: whitelist
-            ) == .closeWindow,
-            "blacklisted apps must retain close-window behavior"
-        )
-        expect(
-            DesktopCloseActionPolicy.action(
-                isEnabled: true,
-                mode: .blacklist,
-                bundleIdentifier: "com.example.other",
-                hasRunningApplication: true,
-                blacklist: blacklist,
-                whitelist: whitelist
-            ) == .quitApplication,
-            "apps outside the blacklist must request quit"
-        )
-        expect(
-            DesktopCloseActionPolicy.action(
-                isEnabled: true,
-                mode: .whitelist,
-                bundleIdentifier: "com.example.allowed",
-                hasRunningApplication: true,
-                blacklist: blacklist,
-                whitelist: whitelist
-            ) == .quitApplication,
-            "whitelisted apps must request quit"
-        )
-        expect(
-            DesktopCloseActionPolicy.action(
-                isEnabled: true,
-                mode: .whitelist,
-                bundleIdentifier: "com.example.other",
-                hasRunningApplication: true,
-                blacklist: blacklist,
-                whitelist: whitelist
-            ) == .closeWindow,
-            "apps outside the whitelist must close the window"
-        )
-        expect(
-            DesktopCloseActionPolicy.action(
-                isEnabled: true,
-                mode: .whitelist,
-                bundleIdentifier: nil,
-                hasRunningApplication: true,
-                blacklist: blacklist,
-                whitelist: whitelist
-            ) == .closeWindow,
-            "list modes must fail closed when the bundle ID is missing"
-        )
-    }
-
-    private static func testIndependentListPersistence() {
-        withDefaults { defaults in
-            let settings = AppSettings(defaults: defaults)
-            settings.desktopCloseQuitBlacklist = [
-                "com.example.black.one",
-                "com.example.black.two"
-            ]
-            settings.desktopCloseQuitWhitelist = ["com.example.white"]
-            settings.desktopCloseQuitMode = .blacklist
-            settings.desktopCloseQuitMode = .whitelist
-            settings.desktopCloseQuitsApplicationEnabled = false
-
-            let reloaded = AppSettings(defaults: defaults)
-            expect(
-                reloaded.desktopCloseQuitBlacklist == [
-                    "com.example.black.one",
-                    "com.example.black.two"
-                ],
-                "desktop blacklist must persist independently"
-            )
-            expect(
-                reloaded.desktopCloseQuitWhitelist == ["com.example.white"],
-                "desktop whitelist must persist independently"
-            )
-        }
-    }
-
-    private static func testLegacyDesktopSettingsMigration() {
-        withDefaults { defaults in
-            defaults.set(1, forKey: "defaultsRevision")
-            defaults.set(true, forKey: "previewControlHoverEnlargementEnabled")
-            defaults.set(27.0, forKey: "previewControlHoverTargetSize")
-            defaults.set(true, forKey: "previewControlsRevealOnControlAreaOnly")
-            defaults.set(true, forKey: "previewCloseQuitsApplicationEnabled")
-            defaults.set("whitelist", forKey: "previewCloseQuitMode")
-            defaults.set(
-                ["com.example.black"],
-                forKey: "previewCloseQuitBlacklist"
-            )
-            defaults.set(
-                ["com.example.white"],
-                forKey: "previewCloseQuitWhitelist"
-            )
-
-            let settings = AppSettings(defaults: defaults)
-            expect(
-                settings.desktopTrafficLightHoverEnlargementEnabled,
-                "legacy hover enlargement must migrate to desktop controls"
-            )
-            expect(
-                settings.desktopTrafficLightHoverTargetSize == 27,
-                "legacy hover size must migrate to desktop controls"
-            )
-            expect(
-                settings.desktopTrafficLightsRevealOnHover,
-                "legacy reveal mode must migrate to desktop controls"
-            )
-            expect(
-                settings.desktopCloseQuitsApplicationEnabled,
-                "legacy close policy enablement must migrate"
-            )
-            expect(
-                settings.desktopCloseQuitMode == .whitelist,
-                "legacy close policy mode must migrate"
-            )
-            expect(
-                settings.desktopCloseQuitBlacklist == ["com.example.black"],
-                "legacy blacklist must migrate"
-            )
-            expect(
-                settings.desktopCloseQuitWhitelist == ["com.example.white"],
-                "legacy whitelist must migrate"
-            )
-        }
-    }
-
     private static func testInvalidRawValuesFallBackSafely() {
         withDefaults { defaults in
             defaults.set("not-a-mode", forKey: "dockClickMinimizeMode")
-            defaults.set("not-a-mode", forKey: "desktopCloseQuitMode")
             let settings = AppSettings(defaults: defaults)
 
             expect(
                 settings.dockClickMinimizeMode == .off,
                 "invalid Dock mode must fall back to off"
             )
-            expect(
-                settings.desktopCloseQuitMode == .all,
-                "invalid desktop close mode must fall back to all"
-            )
         }
     }
 
-    private static func testTrafficLightHoverSizeClamp() {
+    private static func testRemovedDesktopControlSettingsArePurged() {
         withDefaults { defaults in
-            let settings = AppSettings(defaults: defaults)
-            settings.desktopTrafficLightHoverTargetSize = -100
-            expect(
-                settings.desktopTrafficLightHoverTargetSize
-                    == AppSettings.minimumDesktopTrafficLightSize,
-                "desktop traffic-light size must clamp to its minimum"
-            )
+            defaults.set(2, forKey: "defaultsRevision")
+            let removedKeys = [
+                "desktopTrafficLightHoverEnlargementEnabled",
+                "desktopTrafficLightHoverTargetSize",
+                "desktopTrafficLightsRevealOnHover",
+                "desktopCloseQuitsApplicationEnabled",
+                "desktopCloseQuitMode",
+                "desktopCloseQuitBlacklist",
+                "desktopCloseQuitWhitelist",
+                "previewControlHoverEnlargementEnabled",
+                "previewControlHoverTargetSize",
+                "previewControlsRevealOnControlAreaOnly",
+                "previewCloseQuitsApplicationEnabled",
+                "previewCloseQuitMode",
+                "previewCloseQuitBlacklist",
+                "previewCloseQuitWhitelist"
+            ]
+            for key in removedKeys {
+                defaults.set("obsolete", forKey: key)
+            }
 
-            settings.desktopTrafficLightHoverTargetSize = 100
+            _ = AppSettings(defaults: defaults)
+            for key in removedKeys {
+                expect(
+                    defaults.object(forKey: key) == nil,
+                    "removed desktop control setting \(key) must be purged"
+                )
+            }
             expect(
-                settings.desktopTrafficLightHoverTargetSize
-                    == AppSettings.maximumDesktopTrafficLightSize,
-                "desktop traffic-light size must clamp to its maximum"
-            )
-
-            defaults.set(
-                Double.nan,
-                forKey: "desktopTrafficLightHoverTargetSize"
-            )
-            expect(
-                settings.desktopTrafficLightHoverTargetSize
-                    == AppSettings.defaultDesktopTrafficLightHoverTargetSize,
-                "non-finite desktop traffic-light size must use the default"
+                defaults.integer(forKey: "defaultsRevision") == 3,
+                "removed desktop control cleanup must advance defaults revision"
             )
         }
     }

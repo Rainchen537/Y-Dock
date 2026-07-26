@@ -2,8 +2,16 @@
 
 All notable Y-Dock release changes are tracked here.
 
+## v1.1.25 - 2026-07-26
+
+- Removed the desktop-window traffic-light enhancement experiment, including all transparent overlay panels, red/yellow/green actions, hover reveal and enlargement, and red-button quit policies.
+- Removed the associated cross-application CGWindow/Accessibility matching, mouse subscriptions, workspace/Space observers, descriptor refresh timer, 30 Hz occlusion checks, and native green-button event forwarding.
+- Removed all related settings UI and now purges both current and legacy desktop-control preference keys during upgrade.
+- Kept native macOS traffic lights untouched and preserved Dock preview-card controls, Dock-click minimization, and the `Option+Tab` single-window close control.
+
 ## v1.1.24 - 2026-07-24
 
+- This internal candidate was not published; its monitoring and input-stall fixes are included in v1.1.25.
 - Consolidated Y-Dock's five global and five local AppKit event monitors into one process-local global monitor and one local monitor, while preserving the dedicated Carbon hotkeys and synchronous Esc `CGEventTap`.
 - Fixed system-wide keyboard and intermittent interaction stalls after Y-Dock launch by keeping the synchronous Esc event tap disabled outside an active `Option+Tab` session; it now activates only for the switcher and disables again after commit, cancellation, or the matching Esc key-up.
 - Added the vendored Y-Project Monitoring framework with stable subscription ordering, local observer/interceptor separation, lifecycle diagnostics, and standalone arm64/x86_64 routing tests.

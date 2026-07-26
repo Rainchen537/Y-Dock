@@ -2,9 +2,9 @@
 
 ## 当前版本
 
-- 产品版本：`1.1.24`
-- 构建号：`49`
-- 状态：键盘卡顿修复已完成真实热键路径预验证；正式发布待重新生成双架构公证包
+- 产品版本：`1.1.25`
+- 构建号：`50`
+- 状态：桌面窗口红绿灯覆盖功能已完整移除；待完成双架构构建与正式发布验证
 - Y-Framework/Monitoring：`1.0.0`
 
 ## 版本规则
@@ -16,10 +16,11 @@
   `CURRENT_PROJECT_VERSION`、README 下载链接、changelog、tag、两份 thin DMG
   和 GitHub Release。
 
-## v1.1.24 (49)
+## v1.1.25 (50)
 
-- 首次接入 Monitoring 1.0.0。
-- Y-Dock 的 AppKit global/local monitor 从 `5 + 5` 收敛为 `1 + 1`。
-- 桌面红绿灯监听和计时器改为按功能状态与可见按钮动态启停。
-- Esc 同步事件 tap 改为仅在 Option+Tab 会话期间启用，避免普通键盘输入被
-  Y-Dock 主线程反压。
+- 完整删除桌面窗口红绿灯增强、覆盖面板、红黄绿动作、红钮退出策略及其设置。
+- 删除相关 CGWindow/AXWindow 匹配、鼠标订阅、窗口/Space 观察、刷新和 30 Hz
+  遮挡计时器；升级时清理已废弃的桌面红绿灯及旧预览策略偏好键。
+- 保留 Dock 预览卡片控制、Dock 点击最小化和 `Option+Tab` 单窗口关闭入口。
+- 延续 Monitoring 1.0.0 的单组 AppKit global/local monitor，并保持 Esc 同步
+  event tap 仅在 `Option+Tab` 会话期间启用。

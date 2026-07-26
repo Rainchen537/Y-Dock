@@ -24,28 +24,6 @@ enum DockClickMinimizeMode: String, CaseIterable {
     }
 }
 
-enum DesktopCloseQuitMode: String, CaseIterable {
-    case all
-    case blacklist
-    case whitelist
-
-    var displayName: String {
-        switch self {
-        case .all:
-            return "全部 App"
-        case .blacklist:
-            return "黑名单"
-        case .whitelist:
-            return "白名单"
-        }
-    }
-}
-
-enum DesktopCloseAction: Equatable {
-    case closeWindow
-    case quitApplication
-}
-
 struct DockClickWindowStackEntry {
     let ownerPID: pid_t
     let layer: Int
@@ -258,40 +236,6 @@ enum DockClickMinimizePolicy {
     }
 }
 
-enum DesktopCloseActionPolicy {
-    static func action(
-        isEnabled: Bool,
-        mode: DesktopCloseQuitMode,
-        bundleIdentifier: String?,
-        hasRunningApplication: Bool,
-        blacklist: Set<String>,
-        whitelist: Set<String>
-    ) -> DesktopCloseAction {
-        guard isEnabled, hasRunningApplication else {
-            return .closeWindow
-        }
-
-        switch mode {
-        case .all:
-            return .quitApplication
-        case .blacklist:
-            guard let bundleIdentifier, !bundleIdentifier.isEmpty else {
-                return .closeWindow
-            }
-            return blacklist.contains(bundleIdentifier)
-                ? .closeWindow
-                : .quitApplication
-        case .whitelist:
-            guard let bundleIdentifier, !bundleIdentifier.isEmpty else {
-                return .closeWindow
-            }
-            return whitelist.contains(bundleIdentifier)
-                ? .quitApplication
-                : .closeWindow
-        }
-    }
-}
-
 extension Notification.Name {
     static let appSettingsChanged = Notification.Name(
         "DockWindowPreview.appSettingsChanged"
@@ -308,11 +252,15 @@ final class AppSettings {
         static let launchAtLogin = "launchAtLogin"
         static let debugLoggingEnabled = "debugLoggingEnabled"
         static let dockClickMinimizeMode = "dockClickMinimizeMode"
-        static let desktopTrafficLightHoverEnlargementEnabled =
+        static let defaultsRevision = "defaultsRevision"
+    }
+
+    private enum RemovedDesktopControlKeys {
+        static let desktopHoverEnlargementEnabled =
             "desktopTrafficLightHoverEnlargementEnabled"
-        static let desktopTrafficLightHoverTargetSize =
+        static let desktopHoverTargetSize =
             "desktopTrafficLightHoverTargetSize"
-        static let desktopTrafficLightsRevealOnHover =
+        static let desktopRevealOnHover =
             "desktopTrafficLightsRevealOnHover"
         static let desktopCloseQuitsApplicationEnabled =
             "desktopCloseQuitsApplicationEnabled"
@@ -321,27 +269,36 @@ final class AppSettings {
             "desktopCloseQuitBlacklist"
         static let desktopCloseQuitWhitelist =
             "desktopCloseQuitWhitelist"
-        static let defaultsRevision = "defaultsRevision"
-    }
-
-    private enum LegacyKeys {
-        static let hoverEnlargementEnabled =
+        static let legacyHoverEnlargementEnabled =
             "previewControlHoverEnlargementEnabled"
-        static let hoverTargetSize = "previewControlHoverTargetSize"
-        static let revealOnControlAreaOnly =
+        static let legacyHoverTargetSize = "previewControlHoverTargetSize"
+        static let legacyRevealOnControlAreaOnly =
             "previewControlsRevealOnControlAreaOnly"
-        static let closeQuitsApplicationEnabled =
+        static let legacyCloseQuitsApplicationEnabled =
             "previewCloseQuitsApplicationEnabled"
-        static let closeQuitMode = "previewCloseQuitMode"
-        static let closeQuitBlacklist = "previewCloseQuitBlacklist"
-        static let closeQuitWhitelist = "previewCloseQuitWhitelist"
+        static let legacyCloseQuitMode = "previewCloseQuitMode"
+        static let legacyCloseQuitBlacklist = "previewCloseQuitBlacklist"
+        static let legacyCloseQuitWhitelist = "previewCloseQuitWhitelist"
+
+        static let all = [
+            desktopHoverEnlargementEnabled,
+            desktopHoverTargetSize,
+            desktopRevealOnHover,
+            desktopCloseQuitsApplicationEnabled,
+            desktopCloseQuitMode,
+            desktopCloseQuitBlacklist,
+            desktopCloseQuitWhitelist,
+            legacyHoverEnlargementEnabled,
+            legacyHoverTargetSize,
+            legacyRevealOnControlAreaOnly,
+            legacyCloseQuitsApplicationEnabled,
+            legacyCloseQuitMode,
+            legacyCloseQuitBlacklist,
+            legacyCloseQuitWhitelist
+        ]
     }
 
-    static let minimumDesktopTrafficLightSize: CGFloat = 14
-    static let maximumDesktopTrafficLightSize: CGFloat = 30
-    static let defaultDesktopTrafficLightHoverTargetSize: CGFloat = 23
-
-    private let currentDefaultsRevision = 2
+    private let currentDefaultsRevision = 3
     private let defaults: UserDefaults
 
     init(defaults: UserDefaults = .standard) {
@@ -420,130 +377,6 @@ final class AppSettings {
         }
     }
 
-    var desktopTrafficLightHoverEnlargementEnabled: Bool {
-        get {
-            defaults.bool(
-                forKey: Keys.desktopTrafficLightHoverEnlargementEnabled
-            )
-        }
-        set {
-            set(
-                newValue,
-                forKey: Keys.desktopTrafficLightHoverEnlargementEnabled
-            )
-        }
-    }
-
-    var desktopTrafficLightHoverTargetSize: CGFloat {
-        get {
-            CGFloat(clamped(
-                defaults.double(
-                    forKey: Keys.desktopTrafficLightHoverTargetSize
-                ),
-                min: Double(Self.minimumDesktopTrafficLightSize),
-                max: Double(Self.maximumDesktopTrafficLightSize),
-                fallback: Double(
-                    Self.defaultDesktopTrafficLightHoverTargetSize
-                )
-            ))
-        }
-        set {
-            let value = clamped(
-                Double(newValue),
-                min: Double(Self.minimumDesktopTrafficLightSize),
-                max: Double(Self.maximumDesktopTrafficLightSize),
-                fallback: Double(
-                    Self.defaultDesktopTrafficLightHoverTargetSize
-                )
-            )
-            set(value, forKey: Keys.desktopTrafficLightHoverTargetSize)
-        }
-    }
-
-    var desktopTrafficLightsRevealOnHover: Bool {
-        get {
-            defaults.bool(forKey: Keys.desktopTrafficLightsRevealOnHover)
-        }
-        set {
-            set(newValue, forKey: Keys.desktopTrafficLightsRevealOnHover)
-        }
-    }
-
-    var desktopCloseQuitsApplicationEnabled: Bool {
-        get {
-            defaults.bool(
-                forKey: Keys.desktopCloseQuitsApplicationEnabled
-            )
-        }
-        set {
-            set(
-                newValue,
-                forKey: Keys.desktopCloseQuitsApplicationEnabled
-            )
-        }
-    }
-
-    var desktopCloseQuitMode: DesktopCloseQuitMode {
-        get {
-            guard
-                let rawValue = defaults.string(
-                    forKey: Keys.desktopCloseQuitMode
-                ),
-                let mode = DesktopCloseQuitMode(rawValue: rawValue)
-            else {
-                return .all
-            }
-            return mode
-        }
-        set {
-            set(newValue.rawValue, forKey: Keys.desktopCloseQuitMode)
-        }
-    }
-
-    var desktopCloseQuitBlacklist: Set<String> {
-        get {
-            bundleIdentifiers(forKey: Keys.desktopCloseQuitBlacklist)
-        }
-        set {
-            setBundleIdentifiers(
-                newValue,
-                forKey: Keys.desktopCloseQuitBlacklist
-            )
-        }
-    }
-
-    var desktopCloseQuitWhitelist: Set<String> {
-        get {
-            bundleIdentifiers(forKey: Keys.desktopCloseQuitWhitelist)
-        }
-        set {
-            setBundleIdentifiers(
-                newValue,
-                forKey: Keys.desktopCloseQuitWhitelist
-            )
-        }
-    }
-
-    var requiresDesktopTrafficLightOverlay: Bool {
-        desktopTrafficLightHoverEnlargementEnabled
-            || desktopTrafficLightsRevealOnHover
-            || desktopCloseQuitsApplicationEnabled
-    }
-
-    func desktopCloseAction(
-        bundleIdentifier: String?,
-        hasRunningApplication: Bool
-    ) -> DesktopCloseAction {
-        DesktopCloseActionPolicy.action(
-            isEnabled: desktopCloseQuitsApplicationEnabled,
-            mode: desktopCloseQuitMode,
-            bundleIdentifier: bundleIdentifier,
-            hasRunningApplication: hasRunningApplication,
-            blacklist: desktopCloseQuitBlacklist,
-            whitelist: desktopCloseQuitWhitelist
-        )
-    }
-
     private func registerDefaults() {
         defaults.register(defaults: [
             Keys.hoverDelay: 0.10,
@@ -553,16 +386,6 @@ final class AppSettings {
             Keys.debugLoggingEnabled: false,
             Keys.dockClickMinimizeMode:
                 DockClickMinimizeMode.off.rawValue,
-            Keys.desktopTrafficLightHoverEnlargementEnabled: false,
-            Keys.desktopTrafficLightHoverTargetSize: Double(
-                Self.defaultDesktopTrafficLightHoverTargetSize
-            ),
-            Keys.desktopTrafficLightsRevealOnHover: false,
-            Keys.desktopCloseQuitsApplicationEnabled: false,
-            Keys.desktopCloseQuitMode:
-                DesktopCloseQuitMode.all.rawValue,
-            Keys.desktopCloseQuitBlacklist: [String](),
-            Keys.desktopCloseQuitWhitelist: [String](),
             Keys.defaultsRevision: 0
         ])
         migrateDefaultsIfNeeded()
@@ -579,84 +402,17 @@ final class AppSettings {
             }
         }
 
-        if revision < 2 {
-            migrateLegacyDesktopTrafficLightSettings()
+        if revision < 3 {
+            purgeRemovedDesktopControlSettings()
         }
 
         defaults.set(currentDefaultsRevision, forKey: Keys.defaultsRevision)
     }
 
-    private func migrateLegacyDesktopTrafficLightSettings() {
-        if let value = defaults.object(
-            forKey: LegacyKeys.hoverEnlargementEnabled
-        ) as? Bool {
-            defaults.set(
-                value,
-                forKey: Keys.desktopTrafficLightHoverEnlargementEnabled
-            )
+    private func purgeRemovedDesktopControlSettings() {
+        for key in RemovedDesktopControlKeys.all {
+            defaults.removeObject(forKey: key)
         }
-        if let value = defaults.object(
-            forKey: LegacyKeys.hoverTargetSize
-        ) as? NSNumber {
-            defaults.set(
-                value.doubleValue,
-                forKey: Keys.desktopTrafficLightHoverTargetSize
-            )
-        }
-        if let value = defaults.object(
-            forKey: LegacyKeys.revealOnControlAreaOnly
-        ) as? Bool {
-            defaults.set(
-                value,
-                forKey: Keys.desktopTrafficLightsRevealOnHover
-            )
-        }
-        if let value = defaults.object(
-            forKey: LegacyKeys.closeQuitsApplicationEnabled
-        ) as? Bool {
-            defaults.set(
-                value,
-                forKey: Keys.desktopCloseQuitsApplicationEnabled
-            )
-        }
-        if let value = defaults.string(
-            forKey: LegacyKeys.closeQuitMode
-        ), DesktopCloseQuitMode(rawValue: value) != nil {
-            defaults.set(value, forKey: Keys.desktopCloseQuitMode)
-        }
-        if let value = defaults.stringArray(
-            forKey: LegacyKeys.closeQuitBlacklist
-        ) {
-            defaults.set(value, forKey: Keys.desktopCloseQuitBlacklist)
-        }
-        if let value = defaults.stringArray(
-            forKey: LegacyKeys.closeQuitWhitelist
-        ) {
-            defaults.set(value, forKey: Keys.desktopCloseQuitWhitelist)
-        }
-    }
-
-    private func bundleIdentifiers(forKey key: String) -> Set<String> {
-        Set((defaults.stringArray(forKey: key) ?? []).compactMap(
-            normalizedBundleIdentifier
-        ))
-    }
-
-    private func setBundleIdentifiers(
-        _ identifiers: Set<String>,
-        forKey key: String
-    ) {
-        let normalized = Set(identifiers.compactMap(
-            normalizedBundleIdentifier
-        ))
-        set(normalized.sorted(), forKey: key)
-    }
-
-    private func normalizedBundleIdentifier(_ value: String) -> String? {
-        let trimmed = value.trimmingCharacters(
-            in: .whitespacesAndNewlines
-        )
-        return trimmed.isEmpty ? nil : trimmed
     }
 
     private func set(_ value: Any, forKey key: String) {

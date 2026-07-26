@@ -4,6 +4,15 @@
 
 不要在这里记录 token、证书密码、Apple ID、notary 密码等敏感信息。
 
+## 2026-07-26
+
+- 准备发布 `v1.1.25 (50)`：完整删除此前实验性的桌面窗口红绿灯增强。移除 `DesktopWindowControlsController.swift` 及 Xcode target 引用，App 启动/退出路径不再创建或停止该控制器。
+- 删除对其他 App 窗口的 CGWindow/AXWindow 收集匹配、三颗透明 nonactivating panel、固定点击覆盖区、前后窗口遮挡扫描、多屏坐标换算、窗口/Space/App 激活刷新、拖动抑制、动作前复核，以及绿色按钮原生 CGEvent 转发。
+- 删除红/黄/绿覆盖按钮动作、悬浮显示与放大、目标尺寸预览、红钮退出 App、全部/黑名单/白名单策略和 App 名单设置；Dock 预览卡片控制、Dock 点击最小化及 `Option+Tab` 单窗口关闭保持不变。
+- `AppSettings` 默认版本升级到 revision 3；升级时删除所有现行桌面红绿灯键及 v1.1.21/v1.1.22 遗留的 preview-control 策略键，防止废弃功能留下可重新激活的配置。
+- 更新资产选择、AppSettings 策略和 Monitoring 框架三组 standalone 测试均以 strict thin `arm64` / `x86_64` 编译运行通过；App 的 Debug/Release 四种架构组合均构建成功，版本为 `1.1.25 (50)` 且主可执行文件分别为目标单一架构，arm64 静态分析通过。
+- 功能设置页内建截图确认仅保留“Dock 悬浮预览”和“Dock 点击”两块设置，桌面红绿灯及红钮策略界面已完全消失；截图进程已主动结束。
+
 ## 2026-07-24
 
 - 准备发布 `v1.1.24 (49)`：新增并 vendoring `Y-Framework/Monitoring` v1.0.0，在 Y-Dock 内创建单一 `YNSEventMonitorHub`，将 MouseTracker、OptionTabSwitcher、DesktopWindowControlsController 原有 `5 global + 5 local` AppKit monitor 收敛为一个 global 和一个 local 原生 monitor。

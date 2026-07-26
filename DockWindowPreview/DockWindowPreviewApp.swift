@@ -12,12 +12,6 @@ final class DockWindowPreviewApp: NSObject, NSApplicationDelegate {
     private let windowActivator = WindowActivator()
     private let dockInspector = DockInspector()
     private let updateChecker = UpdateChecker.shared
-    private lazy var desktopWindowControlsController =
-        DesktopWindowControlsController(
-            settings: settings,
-            eventMonitorHub: eventMonitorHub
-        )
-
     private struct PreviewContext {
         let appPID: pid_t
         let anchor: NSPoint
@@ -129,7 +123,6 @@ final class DockWindowPreviewApp: NSObject, NSApplicationDelegate {
         }
         mouseTracker.start()
         optionTabSwitcher.start()
-        desktopWindowControlsController.start()
         let eventMonitoringStarted = eventMonitorHub.start()
         let diagnostics = eventMonitorHub.diagnostics
         if eventMonitoringStarted {
@@ -164,7 +157,6 @@ final class DockWindowPreviewApp: NSObject, NSApplicationDelegate {
         dockPrimaryClickWorkItem?.cancel()
         dockPrimaryClickWorkItem = nil
         eventMonitorHub.stop()
-        desktopWindowControlsController.stop()
         optionTabSwitcher.stop()
         mouseTracker.stop()
     }

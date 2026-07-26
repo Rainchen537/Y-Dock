@@ -1,6 +1,5 @@
 import AppKit
 import Foundation
-import UniformTypeIdentifiers
 
 final class SettingsWindowController: NSObject {
     private let contentController: SettingsContentController
@@ -72,18 +71,7 @@ private final class SettingsContentController {
     private let hoverDelayValuePill = YSettingPill(text: "100 ms", tone: .accent)
     private let thumbnailSlider = NSSlider(value: 165, minValue: 100, maxValue: 260, target: nil, action: nil)
     private let thumbnailValuePill = YSettingPill(text: "165 px", tone: .neutral)
-    private let trafficLightHoverSizeSlider = NSSlider(
-        value: Double(AppSettings.defaultDesktopTrafficLightHoverTargetSize),
-        minValue: Double(AppSettings.minimumDesktopTrafficLightSize),
-        maxValue: Double(AppSettings.maximumDesktopTrafficLightSize),
-        target: nil,
-        action: nil
-    )
-    private let trafficLightHoverSizeValuePill = YSettingPill(text: "23.0 px", tone: .accent)
-    private let trafficLightHoverSizePreview = DesktopTrafficLightSizeSampleView()
     private let dockClickMinimizeModePopUp = NSPopUpButton(frame: .zero, pullsDown: false)
-    private let desktopCloseQuitModePopUp = NSPopUpButton(frame: .zero, pullsDown: false)
-    private let closePolicyListStack = NSStackView()
     private let launchAtLoginStatusPill = YSettingPill(text: "未开启", tone: .neutral)
     private let updateStatusPill = YSettingPill(text: "", tone: .neutral)
     private let accessibilityStatusPill = YSettingPill(text: "检测中", tone: .neutral)
@@ -92,9 +80,6 @@ private final class SettingsContentController {
     private let optionTabShortcutPill = YSettingPill(text: "⌥ Tab", tone: .accent)
 
     private lazy var showTitleSwitch = YSettingUI.makeSwitch(target: self, action: #selector(showTitleChanged(_:)))
-    private lazy var trafficLightHoverEnlargementSwitch = YSettingUI.makeSwitch(target: self, action: #selector(trafficLightHoverEnlargementChanged(_:)))
-    private lazy var trafficLightRevealSwitch = YSettingUI.makeSwitch(target: self, action: #selector(trafficLightRevealChanged(_:)))
-    private lazy var desktopCloseQuitsApplicationSwitch = YSettingUI.makeSwitch(target: self, action: #selector(desktopCloseQuitsApplicationChanged(_:)))
     private lazy var launchAtLoginSwitch = YSettingUI.makeSwitch(target: self, action: #selector(launchAtLoginChanged(_:)))
     private lazy var debugSwitch = YSettingUI.makeSwitch(target: self, action: #selector(debugChanged(_:)))
     private lazy var openLoginItemsButton = makeButton(title: "登录项", symbolName: "person.crop.circle.badge.checkmark", action: #selector(openLoginItemsSettings))
@@ -109,13 +94,6 @@ private final class SettingsContentController {
     private lazy var requestAllButton = makeButton(title: "请求缺失权限", symbolName: "lock.open", role: .primary, action: #selector(requestAllPermissions))
     private lazy var resetPermissionsButton = makeButton(title: "刷新权限记录", symbolName: "arrow.counterclockwise", action: #selector(resetPrivacyPermissions))
     private lazy var recheckButton = makeButton(title: "重新检测", symbolName: "checkmark.shield", action: #selector(recheckPermissions))
-    private lazy var addClosePolicyApplicationButton = makeButton(
-        title: "添加 App",
-        symbolName: "plus.app",
-        role: .primary,
-        action: #selector(addClosePolicyApplication)
-    )
-
     private var isObservingApplicationActivation = false
 
     init(
@@ -217,35 +195,10 @@ private final class SettingsContentController {
         ))
 
         stack.addArrangedSubview(YSettingSectionView(
-            title: "桌面窗口红绿灯",
-            symbolName: "macwindow",
-            views: [
-                YSettingUI.row(title: "鼠标进入左上区域后显示增强按钮", trailingView: trafficLightRevealSwitch),
-                YSettingUI.row(title: "悬浮单颗按钮时放大", trailingView: trafficLightHoverEnlargementSwitch),
-                YSettingUI.sliderRow(
-                    title: "悬浮目标大小",
-                    slider: trafficLightHoverSizeSlider,
-                    valueView: YSettingUI.horizontal([trafficLightHoverSizePreview, trafficLightHoverSizeValuePill], spacing: 6)
-                )
-            ]
-        ))
-
-        stack.addArrangedSubview(YSettingSectionView(
             title: "Dock 点击",
             symbolName: "cursorarrow.click.2",
             views: [
                 YSettingUI.row(title: "点击前台 App 图标时最小化", trailingView: dockClickMinimizeModePopUp)
-            ]
-        ))
-
-        rebuildClosePolicyList()
-        stack.addArrangedSubview(YSettingSectionView(
-            title: "桌面窗口红色按钮",
-            symbolName: "xmark.circle",
-            views: [
-                YSettingUI.row(title: "红色按钮改为请求退出 App", trailingView: desktopCloseQuitsApplicationSwitch),
-                YSettingUI.row(title: "应用范围", trailingView: desktopCloseQuitModePopUp),
-                closePolicyListStack
             ]
         ))
 
@@ -393,94 +346,6 @@ private final class SettingsContentController {
         }
     }
 
-    private func rebuildClosePolicyList() {
-        closePolicyListStack.arrangedSubviews.forEach { view in
-            closePolicyListStack.removeArrangedSubview(view)
-            view.removeFromSuperview()
-        }
-
-        let mode = settings.desktopCloseQuitMode
-        guard mode != .all else {
-            closePolicyListStack.isHidden = true
-            return
-        }
-
-        closePolicyListStack.isHidden = false
-        closePolicyListStack.addArrangedSubview(YSettingUI.divider())
-        closePolicyListStack.addArrangedSubview(YSettingUI.row(
-            title: mode == .blacklist ? "不退出的 App" : "允许退出的 App",
-            trailingView: addClosePolicyApplicationButton
-        ))
-
-        let bundleIdentifiers = mode == .blacklist
-            ? settings.desktopCloseQuitBlacklist
-            : settings.desktopCloseQuitWhitelist
-
-        if bundleIdentifiers.isEmpty {
-            closePolicyListStack.addArrangedSubview(YSettingUI.row(
-                title: "列表",
-                trailingView: YSettingPill(text: "尚未添加", tone: .neutral)
-            ))
-            return
-        }
-
-        for bundleIdentifier in bundleIdentifiers.sorted() {
-            closePolicyListStack.addArrangedSubview(applicationPolicyRow(bundleIdentifier: bundleIdentifier))
-        }
-    }
-
-    private func applicationPolicyRow(bundleIdentifier: String) -> NSView {
-        let runningApplication = NSWorkspace.shared.runningApplications.first {
-            $0.bundleIdentifier == bundleIdentifier && !$0.isTerminated
-        }
-        let applicationURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleIdentifier)
-        let applicationBundle = applicationURL.flatMap(Bundle.init(url:))
-        let displayName = runningApplication?.localizedName
-            ?? (applicationBundle?.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String)
-            ?? (applicationBundle?.object(forInfoDictionaryKey: "CFBundleName") as? String)
-            ?? applicationURL?.deletingPathExtension().lastPathComponent
-            ?? bundleIdentifier
-        let icon = runningApplication?.icon
-            ?? applicationURL.map { NSWorkspace.shared.icon(forFile: $0.path) }
-            ?? NSImage(systemSymbolName: "app", accessibilityDescription: displayName)
-
-        let iconView = NSImageView(image: icon ?? NSImage())
-        iconView.imageScaling = .scaleProportionallyUpOrDown
-        iconView.widthAnchor.constraint(equalToConstant: 30).isActive = true
-        iconView.heightAnchor.constraint(equalToConstant: 30).isActive = true
-
-        let nameLabel = NSTextField(labelWithString: displayName)
-        nameLabel.font = NSFont.systemFont(ofSize: 12, weight: .semibold)
-        nameLabel.lineBreakMode = .byTruncatingTail
-        nameLabel.maximumNumberOfLines = 1
-
-        let bundleIdentifierLabel = NSTextField(labelWithString: bundleIdentifier)
-        bundleIdentifierLabel.font = NSFont.monospacedSystemFont(ofSize: 10, weight: .regular)
-        bundleIdentifierLabel.textColor = .secondaryLabelColor
-        bundleIdentifierLabel.lineBreakMode = .byTruncatingMiddle
-        bundleIdentifierLabel.maximumNumberOfLines = 1
-
-        let metadataStack = NSStackView(views: [nameLabel, bundleIdentifierLabel])
-        metadataStack.orientation = .vertical
-        metadataStack.alignment = .leading
-        metadataStack.spacing = 2
-        metadataStack.setContentHuggingPriority(.defaultLow, for: .horizontal)
-
-        let removeButton = makeButton(
-            title: "移除",
-            symbolName: "minus.circle",
-            action: #selector(removeClosePolicyApplication(_:))
-        )
-        removeButton.identifier = NSUserInterfaceItemIdentifier(bundleIdentifier)
-
-        let row = NSStackView(views: [iconView, metadataStack, YSettingUI.spacer(), removeButton])
-        row.orientation = .horizontal
-        row.alignment = .centerY
-        row.spacing = 10
-        row.heightAnchor.constraint(greaterThanOrEqualToConstant: 38).isActive = true
-        return row
-    }
-
     private func configureControls() {
         hoverDelaySlider.target = self
         hoverDelaySlider.action = #selector(hoverDelayChanged(_:))
@@ -492,26 +357,11 @@ private final class SettingsContentController {
         thumbnailSlider.controlSize = .small
         thumbnailSlider.isContinuous = true
 
-        trafficLightHoverSizeSlider.target = self
-        trafficLightHoverSizeSlider.action = #selector(trafficLightHoverSizeChanged(_:))
-        trafficLightHoverSizeSlider.controlSize = .small
-        trafficLightHoverSizeSlider.isContinuous = true
-
         configureModePopUp(
             dockClickMinimizeModePopUp,
             values: DockClickMinimizeMode.allCases.map { ($0.displayName, $0.rawValue) },
             action: #selector(dockClickMinimizeModeChanged(_:))
         )
-        configureModePopUp(
-            desktopCloseQuitModePopUp,
-            values: DesktopCloseQuitMode.allCases.map { ($0.displayName, $0.rawValue) },
-            action: #selector(desktopCloseQuitModeChanged(_:))
-        )
-
-        closePolicyListStack.orientation = .vertical
-        closePolicyListStack.alignment = .width
-        closePolicyListStack.spacing = 8
-
         updateStatusPill.setText("v\(updateChecker.currentVersion)", tone: .neutral)
     }
 
@@ -523,18 +373,7 @@ private final class SettingsContentController {
         thumbnailValuePill.setText(String(format: "%.0f px", settings.thumbnailHeight), tone: .neutral)
 
         showTitleSwitch.state = settings.showWindowTitles ? .on : .off
-        trafficLightRevealSwitch.state = settings.desktopTrafficLightsRevealOnHover ? .on : .off
-        trafficLightHoverEnlargementSwitch.state = settings.desktopTrafficLightHoverEnlargementEnabled ? .on : .off
-        trafficLightHoverSizeSlider.doubleValue = Double(settings.desktopTrafficLightHoverTargetSize)
-        trafficLightHoverSizeValuePill.setText(
-            String(format: "%.1f px", settings.desktopTrafficLightHoverTargetSize),
-            tone: .accent
-        )
-        trafficLightHoverSizePreview.diameter = settings.desktopTrafficLightHoverTargetSize
         selectMode(settings.dockClickMinimizeMode.rawValue, in: dockClickMinimizeModePopUp)
-        desktopCloseQuitsApplicationSwitch.state = settings.desktopCloseQuitsApplicationEnabled ? .on : .off
-        selectMode(settings.desktopCloseQuitMode.rawValue, in: desktopCloseQuitModePopUp)
-        rebuildClosePolicyList()
         debugSwitch.state = settings.debugLoggingEnabled ? .on : .off
         refreshLaunchAtLoginStatus()
         refreshPermissionStatus()
@@ -615,21 +454,6 @@ private final class SettingsContentController {
         refreshValues()
     }
 
-    @objc private func trafficLightHoverEnlargementChanged(_ sender: NSSwitch) {
-        settings.desktopTrafficLightHoverEnlargementEnabled = sender.state == .on
-        refreshValues()
-    }
-
-    @objc private func trafficLightHoverSizeChanged(_ sender: NSSlider) {
-        settings.desktopTrafficLightHoverTargetSize = CGFloat(sender.doubleValue)
-        refreshValues()
-    }
-
-    @objc private func trafficLightRevealChanged(_ sender: NSSwitch) {
-        settings.desktopTrafficLightsRevealOnHover = sender.state == .on
-        refreshValues()
-    }
-
     @objc private func dockClickMinimizeModeChanged(_ sender: NSPopUpButton) {
         guard
             let rawValue = sender.selectedItem?.representedObject as? String,
@@ -641,90 +465,6 @@ private final class SettingsContentController {
         }
         settings.dockClickMinimizeMode = mode
         refreshValues()
-    }
-
-    @objc private func desktopCloseQuitsApplicationChanged(_ sender: NSSwitch) {
-        settings.desktopCloseQuitsApplicationEnabled = sender.state == .on
-        refreshValues()
-    }
-
-    @objc private func desktopCloseQuitModeChanged(_ sender: NSPopUpButton) {
-        guard
-            let rawValue = sender.selectedItem?.representedObject as? String,
-            let mode = DesktopCloseQuitMode(rawValue: rawValue)
-        else {
-            settings.desktopCloseQuitMode = .all
-            refreshValues()
-            return
-        }
-        settings.desktopCloseQuitMode = mode
-        refreshValues()
-    }
-
-    @objc private func addClosePolicyApplication() {
-        guard settings.desktopCloseQuitMode != .all else { return }
-
-        let panel = NSOpenPanel()
-        panel.title = settings.desktopCloseQuitMode == .blacklist ? "添加不退出的 App" : "添加允许退出的 App"
-        panel.prompt = "添加"
-        panel.directoryURL = URL(fileURLWithPath: "/Applications", isDirectory: true)
-        panel.canChooseFiles = true
-        panel.canChooseDirectories = false
-        panel.allowsMultipleSelection = false
-        panel.allowedContentTypes = [.applicationBundle]
-
-        panel.begin { [weak self] response in
-            guard response == .OK, let self, let applicationURL = panel.url else { return }
-            guard
-                applicationURL.pathExtension.lowercased() == "app",
-                let bundleIdentifier = Bundle(url: applicationURL)?.bundleIdentifier,
-                !bundleIdentifier.isEmpty
-            else {
-                self.showMissingBundleIdentifierAlert()
-                return
-            }
-
-            switch self.settings.desktopCloseQuitMode {
-            case .blacklist:
-                var identifiers = self.settings.desktopCloseQuitBlacklist
-                identifiers.insert(bundleIdentifier)
-                self.settings.desktopCloseQuitBlacklist = identifiers
-            case .whitelist:
-                var identifiers = self.settings.desktopCloseQuitWhitelist
-                identifiers.insert(bundleIdentifier)
-                self.settings.desktopCloseQuitWhitelist = identifiers
-            case .all:
-                return
-            }
-            self.refreshValues()
-        }
-    }
-
-    @objc private func removeClosePolicyApplication(_ sender: NSButton) {
-        guard let bundleIdentifier = sender.identifier?.rawValue else { return }
-
-        switch settings.desktopCloseQuitMode {
-        case .blacklist:
-            var identifiers = settings.desktopCloseQuitBlacklist
-            identifiers.remove(bundleIdentifier)
-            settings.desktopCloseQuitBlacklist = identifiers
-        case .whitelist:
-            var identifiers = settings.desktopCloseQuitWhitelist
-            identifiers.remove(bundleIdentifier)
-            settings.desktopCloseQuitWhitelist = identifiers
-        case .all:
-            return
-        }
-        refreshValues()
-    }
-
-    private func showMissingBundleIdentifierAlert() {
-        let alert = NSAlert()
-        alert.alertStyle = .warning
-        alert.messageText = "无法添加此 App"
-        alert.informativeText = "所选 .app 没有可读取的 bundle ID。"
-        alert.addButton(withTitle: "好")
-        alert.runModal()
     }
 
     @objc private func showTitleChanged(_ sender: NSSwitch) {
@@ -951,51 +691,5 @@ private final class SettingsContentController {
         alert.messageText = "自动更新失败"
         alert.informativeText = error.localizedDescription
         alert.runModal()
-    }
-}
-
-private final class DesktopTrafficLightSizeSampleView: NSView {
-    var diameter = AppSettings.defaultDesktopTrafficLightHoverTargetSize {
-        didSet {
-            if !diameter.isFinite {
-                diameter = AppSettings.defaultDesktopTrafficLightHoverTargetSize
-                return
-            }
-            diameter = max(
-                AppSettings.minimumDesktopTrafficLightSize,
-                min(AppSettings.maximumDesktopTrafficLightSize, diameter)
-            )
-            needsDisplay = true
-        }
-    }
-
-    override var intrinsicContentSize: NSSize {
-        NSSize(
-            width: AppSettings.maximumDesktopTrafficLightSize,
-            height: AppSettings.maximumDesktopTrafficLightSize
-        )
-    }
-
-    override func draw(_ dirtyRect: NSRect) {
-        let circleRect = NSRect(
-            x: bounds.midX - diameter / 2,
-            y: bounds.midY - diameter / 2,
-            width: diameter,
-            height: diameter
-        ).insetBy(dx: 0.35, dy: 0.35)
-
-        NSColor(calibratedRed: 1.00, green: 0.37, blue: 0.34, alpha: 1).setFill()
-        NSBezierPath(ovalIn: circleRect).fill()
-
-        NSColor(calibratedWhite: 0.16, alpha: 0.72).setStroke()
-        let path = NSBezierPath()
-        let inset = circleRect.width * 0.32
-        path.lineWidth = max(1.1, circleRect.width * 0.085)
-        path.lineCapStyle = .round
-        path.move(to: NSPoint(x: circleRect.minX + inset, y: circleRect.minY + inset))
-        path.line(to: NSPoint(x: circleRect.maxX - inset, y: circleRect.maxY - inset))
-        path.move(to: NSPoint(x: circleRect.maxX - inset, y: circleRect.minY + inset))
-        path.line(to: NSPoint(x: circleRect.minX + inset, y: circleRect.maxY - inset))
-        path.stroke()
     }
 }
