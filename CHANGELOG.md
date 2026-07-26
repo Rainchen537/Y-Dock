@@ -2,6 +2,12 @@
 
 All notable Y-Dock release changes are tracked here.
 
+## v1.3.0 - 2026-07-27
+
+- Added a separate minimize-or-hide action choice for clicking an already-frontmost App icon in the Dock.
+- Preserved the existing off, single-window-App, and all-App trigger scopes, and kept minimize as the default action.
+- Kept the existing frontmost and topmost-window safety checks so background or covered Apps retain native Dock activation behavior.
+
 ## v1.2.0 - 2026-07-27
 
 - Added a choice for the yellow control on Dock preview cards: minimize only the selected window, or hide the window's entire application.

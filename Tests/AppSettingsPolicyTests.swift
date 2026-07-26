@@ -15,6 +15,7 @@ private enum AppSettingsPolicyTests {
         testDockClickSnapshotRefreshPolicy()
         testDockClickTopmostWindowPolicy()
         testDockClickTimestampedSnapshots()
+        testDockClickActions()
         testPreviewMinimizeActions()
         testInvalidRawValuesFallBackSafely()
         testRemovedDesktopControlSettingsArePurged()
@@ -27,6 +28,11 @@ private enum AppSettingsPolicyTests {
     }
 
     private static func testDockClickMinimizeModes() {
+        expect(
+            DockClickMinimizeMode.allCases.map(\.displayName) ==
+                ["关闭", "仅单窗口 App", "所有 App"],
+            "Dock click trigger scopes must use action-neutral labels"
+        )
         expect(
             !DockClickMinimizePolicy.shouldMinimize(
                 mode: .off,
@@ -310,6 +316,7 @@ private enum AppSettingsPolicyTests {
     private static func testInvalidRawValuesFallBackSafely() {
         withDefaults { defaults in
             defaults.set("not-a-mode", forKey: "dockClickMinimizeMode")
+            defaults.set("not-an-action", forKey: "dockClickAction")
             defaults.set("not-an-action", forKey: "previewMinimizeAction")
             let settings = AppSettings(defaults: defaults)
 
@@ -318,8 +325,32 @@ private enum AppSettingsPolicyTests {
                 "invalid Dock mode must fall back to off"
             )
             expect(
+                settings.dockClickAction == .minimize,
+                "invalid Dock action must fall back to minimize"
+            )
+            expect(
                 settings.previewMinimizeAction == .minimize,
                 "invalid preview minimize action must fall back to minimize"
+            )
+        }
+    }
+
+    private static func testDockClickActions() {
+        withDefaults { defaults in
+            let settings = AppSettings(defaults: defaults)
+            expect(
+                settings.dockClickAction == .minimize,
+                "Dock click action must preserve the existing minimize default"
+            )
+
+            settings.dockClickAction = .hide
+            expect(
+                settings.dockClickAction == .hide,
+                "Dock click action must persist the hide choice"
+            )
+            expect(
+                DockClickAction.allCases.map(\.displayName) == ["最小化", "隐藏"],
+                "Dock click action must expose exactly the requested choices"
             )
         }
     }

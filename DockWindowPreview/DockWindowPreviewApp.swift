@@ -288,10 +288,18 @@ final class DockWindowPreviewApp: NSObject, NSApplicationDelegate {
                 return
             }
 
-            let minimizedCount = self.windowActivator.minimize(
-                windows.filter { !$0.isMinimized }
-            )
-            guard minimizedCount > 0 else { return }
+            let didPerformAction: Bool
+            switch self.settings.dockClickAction {
+            case .minimize:
+                didPerformAction = self.windowActivator.minimize(
+                    windows.filter { !$0.isMinimized }
+                ) > 0
+            case .hide:
+                didPerformAction = self.windowActivator.hideApplication(
+                    ownerPID: pid
+                )
+            }
+            guard didPerformAction else { return }
 
             self.invalidatePreviewCaches(ownerPID: pid)
             self.previewPanel.hide()

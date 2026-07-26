@@ -73,6 +73,7 @@ private final class SettingsContentController {
     private let thumbnailValuePill = YSettingPill(text: "165 px", tone: .neutral)
     private let previewMinimizeActionPopUp = NSPopUpButton(frame: .zero, pullsDown: false)
     private let dockClickMinimizeModePopUp = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let dockClickActionPopUp = NSPopUpButton(frame: .zero, pullsDown: false)
     private let launchAtLoginStatusPill = YSettingPill(text: "未开启", tone: .neutral)
     private let updateStatusPill = YSettingPill(text: "", tone: .neutral)
     private let accessibilityStatusPill = YSettingPill(text: "检测中", tone: .neutral)
@@ -200,7 +201,8 @@ private final class SettingsContentController {
             title: "Dock 点击",
             symbolName: "cursorarrow.click.2",
             views: [
-                YSettingUI.row(title: "点击前台 App 图标时最小化", trailingView: dockClickMinimizeModePopUp)
+                YSettingUI.row(title: "触发范围", trailingView: dockClickMinimizeModePopUp),
+                YSettingUI.row(title: "执行动作", trailingView: dockClickActionPopUp)
             ]
         ))
 
@@ -370,6 +372,11 @@ private final class SettingsContentController {
             values: DockClickMinimizeMode.allCases.map { ($0.displayName, $0.rawValue) },
             action: #selector(dockClickMinimizeModeChanged(_:))
         )
+        configureModePopUp(
+            dockClickActionPopUp,
+            values: DockClickAction.allCases.map { ($0.displayName, $0.rawValue) },
+            action: #selector(dockClickActionChanged(_:))
+        )
         updateStatusPill.setText("v\(updateChecker.currentVersion)", tone: .neutral)
     }
 
@@ -383,6 +390,8 @@ private final class SettingsContentController {
         showTitleSwitch.state = settings.showWindowTitles ? .on : .off
         selectMode(settings.previewMinimizeAction.rawValue, in: previewMinimizeActionPopUp)
         selectMode(settings.dockClickMinimizeMode.rawValue, in: dockClickMinimizeModePopUp)
+        selectMode(settings.dockClickAction.rawValue, in: dockClickActionPopUp)
+        dockClickActionPopUp.isEnabled = settings.dockClickMinimizeMode != .off
         debugSwitch.state = settings.debugLoggingEnabled ? .on : .off
         refreshLaunchAtLoginStatus()
         refreshPermissionStatus()
@@ -486,6 +495,19 @@ private final class SettingsContentController {
             return
         }
         settings.dockClickMinimizeMode = mode
+        refreshValues()
+    }
+
+    @objc private func dockClickActionChanged(_ sender: NSPopUpButton) {
+        guard
+            let rawValue = sender.selectedItem?.representedObject as? String,
+            let action = DockClickAction(rawValue: rawValue)
+        else {
+            settings.dockClickAction = .minimize
+            refreshValues()
+            return
+        }
+        settings.dockClickAction = action
         refreshValues()
     }
 

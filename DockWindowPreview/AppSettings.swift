@@ -19,7 +19,21 @@ enum DockClickMinimizeMode: String, CaseIterable {
         case .onlySingleWindow:
             return "仅单窗口 App"
         case .allWindows:
-            return "所有窗口"
+            return "所有 App"
+        }
+    }
+}
+
+enum DockClickAction: String, CaseIterable {
+    case minimize
+    case hide
+
+    var displayName: String {
+        switch self {
+        case .minimize:
+            return "最小化"
+        case .hide:
+            return "隐藏"
         }
     }
 }
@@ -275,6 +289,7 @@ final class AppSettings {
         static let launchAtLogin = "launchAtLogin"
         static let debugLoggingEnabled = "debugLoggingEnabled"
         static let dockClickMinimizeMode = "dockClickMinimizeMode"
+        static let dockClickAction = "dockClickAction"
         static let previewMinimizeAction = "previewMinimizeAction"
         static let defaultsRevision = "defaultsRevision"
     }
@@ -401,6 +416,23 @@ final class AppSettings {
         }
     }
 
+    var dockClickAction: DockClickAction {
+        get {
+            guard
+                let rawValue = defaults.string(
+                    forKey: Keys.dockClickAction
+                ),
+                let action = DockClickAction(rawValue: rawValue)
+            else {
+                return .minimize
+            }
+            return action
+        }
+        set {
+            set(newValue.rawValue, forKey: Keys.dockClickAction)
+        }
+    }
+
     var previewMinimizeAction: PreviewMinimizeAction {
         get {
             guard
@@ -427,6 +459,8 @@ final class AppSettings {
             Keys.debugLoggingEnabled: false,
             Keys.dockClickMinimizeMode:
                 DockClickMinimizeMode.off.rawValue,
+            Keys.dockClickAction:
+                DockClickAction.minimize.rawValue,
             Keys.previewMinimizeAction:
                 PreviewMinimizeAction.minimize.rawValue,
             Keys.defaultsRevision: 0
