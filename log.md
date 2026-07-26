@@ -13,8 +13,25 @@
 - 功能设置页截图确认新增下拉框完整显示且默认选择“最小化”；截图进程已关闭。
 - 受控外部 App 通过本次真实动作路径隐藏成功，报告 `isHidden=true` 且窗口不可见，
   受控进程已自行退出。
-- 当前版本准备递增为 `1.2.0 (51)`，待继续完成正式签名、公证、双架构 DMG、
-  GitHub Release 与本机最终安装验证闭环。
+- 从干净源码提交 `0f1df64` 完成正式双架构发布。arm64 App/DMG 公证 ID 为
+  `126ae4ee-1101-427f-a67f-852e01a34c5d` /
+  `beff02ea-63c6-4962-8a9c-3297e7fc8f45`；x86_64 App/DMG 为
+  `eb44d789-ddc3-484e-a0f9-e27e87171e52` /
+  `fddcb04f-6497-4ec2-9911-6ca9463c41f1`，全部 Accepted。
+- 最终 arm64 DMG 为 `1,688,802` bytes，SHA-256
+  `bed545c4f9fbed79990e39063c0c1c0cfedd48809f9c1c0582553d2d30338d4b`；
+  x86_64 DMG 为 `1,718,525` bytes，SHA-256
+  `d1da925b052ae15d0f59df63297242c30ce480e8f6a87b8cbf1c11f0a5dbfd55`。
+  两包均通过独立签名、公证、staple、Gatekeeper、镜像和 strict thin 架构验证；
+  x86_64 App 通过 Rosetta 启动并打开功能设置页后主动结束。
+- 从最终 arm64 DMG 覆盖安装 `/Applications/Y-Dock.app`，确认版本
+  `1.2.0 (51)`、thin arm64、Bundle ID、Developer ID、hardened runtime、
+  签名、ticket 与 Gatekeeper 正常；被替换的 `1.1.25` App 已可恢复地移至
+  `/Users/lixingchen/.Trash/Y-Dock-v1.1.25-pre-v1.2.0.app`。
+- `v1.2.0` tag 保持指向功能源码提交 `0f1df64`。GitHub Release 已公开：
+  `https://github.com/Rainchen537/Y-Dock/releases/tag/v1.2.0`；latest API
+  与 GitHub App 均确认只有 arm64、x86_64 两份 DMG，arm64 在前，远端正文、
+  大小与摘要均匹配本地。
 
 ## 2026-07-26
 

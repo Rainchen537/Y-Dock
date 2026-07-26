@@ -14,6 +14,10 @@
 - App 的 Debug/Release arm64/x86_64 四种组合均构建通过，版本为 `1.2.0 (51)` 且主可执行文件分别为目标单一架构；arm64 静态分析通过。
 - 功能设置页内建截图确认“缩略图黄色按钮”下拉框在 Dock 悬浮预览 section 内完整显示且默认选择“最小化”，没有截断或溢出；截图进程已主动结束。
 - 使用独立受控 App 调用本次真实 `WindowActivator.hideApplication` 路径，调用方返回成功，目标 App 随后报告 `isHidden=true` 且窗口不可见；受控进程已自行退出。
+- 从干净 worktree 的源码提交 `0f1df64` 执行 `release.sh` 成功。arm64 App/DMG 公证任务分别为 `126ae4ee-1101-427f-a67f-852e01a34c5d`、`beff02ea-63c6-4962-8a9c-3297e7fc8f45`；x86_64 App/DMG 分别为 `eb44d789-ddc3-484e-a0f9-e27e87171e52`、`fddcb04f-6497-4ec2-9911-6ca9463c41f1`，均为 Accepted。arm64 DMG 签名时一次时间戳服务瞬时失败由既有限次重试安全恢复。
+- 最终 arm64 DMG 为 `1,688,802` bytes，SHA-256 `bed545c4f9fbed79990e39063c0c1c0cfedd48809f9c1c0582553d2d30338d4b`；x86_64 DMG 为 `1,718,525` bytes，SHA-256 `d1da925b052ae15d0f59df63297242c30ce480e8f6a87b8cbf1c11f0a5dbfd55`。两包均独立通过 Developer ID 签名、公证、staple、Gatekeeper、镜像挂载复核与严格 thin 架构断言；x86_64 最终 App 通过 Rosetta 启动并打开功能设置页后主动结束。
+- 从最终 arm64 DMG 以 candidate + backup 方式覆盖安装 `/Applications/Y-Dock.app`，确认正式安装版为 `1.2.0 (51)`、strict thin arm64，Bundle ID、Developer ID 团队、hardened runtime、codesign、App ticket 与 Gatekeeper 均通过；设置页再次确认新增动作选项完整显示。被替换的 `1.1.25` 正式 App 已可恢复地移至废纸篓。
+- tag `v1.2.0` 精确指向功能源码提交 `0f1df64`，`master` 已推送；GitHub Release `https://github.com/Rainchen537/Y-Dock/releases/tag/v1.2.0` 已公开。latest-release API 与 GitHub App 双重确认仅包含 arm64、x86_64 两份 DMG，arm64 在前，正文、远端顺序、bytes 与 SHA-256 digest 均匹配本地最终文件；后续发布记录提交不移动 tag。
 
 ## 2026-07-26
 

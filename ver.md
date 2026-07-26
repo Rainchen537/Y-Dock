@@ -4,7 +4,7 @@
 
 - 产品版本：`1.2.0`
 - 构建号：`51`
-- 状态：准备发布；缩略图黄色按钮支持“最小化 / 隐藏”
+- 状态：已正式发布；缩略图黄色按钮支持“最小化 / 隐藏”
 - Y-Framework/Monitoring：`1.0.0`
 
 ## 版本规则
@@ -22,6 +22,10 @@
 - 默认继续使用单窗口最小化；“隐藏”使用 macOS 公开 App 隐藏语义，作用于所属
   App 的全部窗口。
 - 设置值持久化保存，无效值安全回退到“最小化”，按钮 tooltip 与动作保持一致。
+- arm64/x86_64 两份 strict thin DMG 已分别完成 Developer ID 签名、公证、
+  staple、Gatekeeper 与镜像验证；正式 arm64 安装版已覆盖安装并通过运行冒烟。
+- 发布源码提交与 tag：`0f1df64` / `v1.2.0`。
+- GitHub Release：`https://github.com/Rainchen537/Y-Dock/releases/tag/v1.2.0`。
 
 ## v1.1.25 (50)
 
