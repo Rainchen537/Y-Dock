@@ -4,6 +4,17 @@
 
 不要在这里记录 token、证书密码、Apple ID、notary 密码等敏感信息。
 
+## 2026-07-27
+
+- 准备发布 `v1.2.0 (51)`：Dock 悬浮缩略图卡片的黄色按钮新增“最小化 / 隐藏”二选一设置，默认继续保持原有“最小化”行为。
+- “最小化”继续只对当前缩略图对应窗口写入公开 AX `kAXMinimizedAttribute`；“隐藏”通过公开 `NSRunningApplication.hide()` 隐藏该窗口所属 App 的全部窗口，不依赖辅助功能权限。
+- 实测 `NSRunningApplication.hide()` 可能先返回 `false`、随后异步完成隐藏；动作路径不再把这个瞬时返回值误判成失败，而是在延迟后仅对仍未隐藏且仍在运行的 App 记录诊断。
+- 黄色按钮的 tooltip 会随设置显示“最小化窗口”或“隐藏此应用”；隐藏成功后立即关闭当前预览并清理该 App 的缩略图缓存。
+- AppSettings standalone 测试新增默认值、隐藏选项持久化、展示名称和无效值安全回退覆盖；资产选择、AppSettings 与 Monitoring 三组 standalone 测试均在 arm64/x86_64 编译运行通过。
+- App 的 Debug/Release arm64/x86_64 四种组合均构建通过，版本为 `1.2.0 (51)` 且主可执行文件分别为目标单一架构；arm64 静态分析通过。
+- 功能设置页内建截图确认“缩略图黄色按钮”下拉框在 Dock 悬浮预览 section 内完整显示且默认选择“最小化”，没有截断或溢出；截图进程已主动结束。
+- 使用独立受控 App 调用本次真实 `WindowActivator.hideApplication` 路径，调用方返回成功，目标 App 随后报告 `isHidden=true` 且窗口不可见；受控进程已自行退出。
+
 ## 2026-07-26
 
 - 准备发布 `v1.1.25 (50)`：完整删除此前实验性的桌面窗口红绿灯增强。移除 `DesktopWindowControlsController.swift` 及 Xcode target 引用，App 启动/退出路径不再创建或停止该控制器。

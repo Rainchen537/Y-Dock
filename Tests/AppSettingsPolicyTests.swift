@@ -15,6 +15,7 @@ private enum AppSettingsPolicyTests {
         testDockClickSnapshotRefreshPolicy()
         testDockClickTopmostWindowPolicy()
         testDockClickTimestampedSnapshots()
+        testPreviewMinimizeActions()
         testInvalidRawValuesFallBackSafely()
         testRemovedDesktopControlSettingsArePurged()
 
@@ -309,11 +310,36 @@ private enum AppSettingsPolicyTests {
     private static func testInvalidRawValuesFallBackSafely() {
         withDefaults { defaults in
             defaults.set("not-a-mode", forKey: "dockClickMinimizeMode")
+            defaults.set("not-an-action", forKey: "previewMinimizeAction")
             let settings = AppSettings(defaults: defaults)
 
             expect(
                 settings.dockClickMinimizeMode == .off,
                 "invalid Dock mode must fall back to off"
+            )
+            expect(
+                settings.previewMinimizeAction == .minimize,
+                "invalid preview minimize action must fall back to minimize"
+            )
+        }
+    }
+
+    private static func testPreviewMinimizeActions() {
+        withDefaults { defaults in
+            let settings = AppSettings(defaults: defaults)
+            expect(
+                settings.previewMinimizeAction == .minimize,
+                "preview minimize action must preserve the existing minimize default"
+            )
+
+            settings.previewMinimizeAction = .hide
+            expect(
+                settings.previewMinimizeAction == .hide,
+                "preview minimize action must persist the hide choice"
+            )
+            expect(
+                PreviewMinimizeAction.allCases.map(\.displayName) == ["最小化", "隐藏"],
+                "preview minimize action must expose exactly the requested choices"
             )
         }
     }

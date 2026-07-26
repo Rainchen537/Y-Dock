@@ -402,13 +402,24 @@ final class DockWindowPreviewApp: NSObject, NSApplicationDelegate {
 
     private func minimizeWindowFromPreview(_ window: WindowInfo) {
         invalidatePreviewCaches(ownerPID: window.ownerPID)
-        guard windowActivator.minimize(window) else {
-            NSSound.beep()
-            return
-        }
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak self] in
-            self?.refreshPreviewAfterClosingWindow(pid: window.ownerPID)
+        switch settings.previewMinimizeAction {
+        case .minimize:
+            guard windowActivator.minimize(window) else {
+                NSSound.beep()
+                return
+            }
+
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak self] in
+                self?.refreshPreviewAfterClosingWindow(pid: window.ownerPID)
+            }
+        case .hide:
+            guard windowActivator.hideApplication(ownerPID: window.ownerPID) else {
+                NSSound.beep()
+                return
+            }
+            previewPanel.hide()
+            previewContext = nil
         }
     }
 

@@ -24,6 +24,29 @@ enum DockClickMinimizeMode: String, CaseIterable {
     }
 }
 
+enum PreviewMinimizeAction: String, CaseIterable {
+    case minimize
+    case hide
+
+    var displayName: String {
+        switch self {
+        case .minimize:
+            return "最小化"
+        case .hide:
+            return "隐藏"
+        }
+    }
+
+    var toolTip: String {
+        switch self {
+        case .minimize:
+            return "最小化窗口"
+        case .hide:
+            return "隐藏此应用"
+        }
+    }
+}
+
 struct DockClickWindowStackEntry {
     let ownerPID: pid_t
     let layer: Int
@@ -252,6 +275,7 @@ final class AppSettings {
         static let launchAtLogin = "launchAtLogin"
         static let debugLoggingEnabled = "debugLoggingEnabled"
         static let dockClickMinimizeMode = "dockClickMinimizeMode"
+        static let previewMinimizeAction = "previewMinimizeAction"
         static let defaultsRevision = "defaultsRevision"
     }
 
@@ -377,6 +401,23 @@ final class AppSettings {
         }
     }
 
+    var previewMinimizeAction: PreviewMinimizeAction {
+        get {
+            guard
+                let rawValue = defaults.string(
+                    forKey: Keys.previewMinimizeAction
+                ),
+                let action = PreviewMinimizeAction(rawValue: rawValue)
+            else {
+                return .minimize
+            }
+            return action
+        }
+        set {
+            set(newValue.rawValue, forKey: Keys.previewMinimizeAction)
+        }
+    }
+
     private func registerDefaults() {
         defaults.register(defaults: [
             Keys.hoverDelay: 0.10,
@@ -386,6 +427,8 @@ final class AppSettings {
             Keys.debugLoggingEnabled: false,
             Keys.dockClickMinimizeMode:
                 DockClickMinimizeMode.off.rawValue,
+            Keys.previewMinimizeAction:
+                PreviewMinimizeAction.minimize.rawValue,
             Keys.defaultsRevision: 0
         ])
         migrateDefaultsIfNeeded()

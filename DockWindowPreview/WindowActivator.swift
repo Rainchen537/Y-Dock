@@ -197,6 +197,30 @@ final class WindowActivator {
     }
 
     @discardableResult
+    func hideApplication(ownerPID: pid_t) -> Bool {
+        guard
+            let app = NSRunningApplication(processIdentifier: ownerPID),
+            !app.isTerminated
+        else {
+            DWLog("Cannot find running application to hide for pid \(ownerPID)")
+            return false
+        }
+
+        let reportedSuccess = app.hide()
+        if !reportedSuccess {
+            // NSRunningApplication can report false while the public hide request
+            // is still delivered asynchronously. Verify the resulting state for
+            // diagnostics instead of treating a completed hide as a failed click.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                if !app.isHidden, !app.isTerminated {
+                    DWLog("Application did not become hidden for pid \(ownerPID)")
+                }
+            }
+        }
+        return true
+    }
+
+    @discardableResult
     func gracefulQuitApplication(ownerPID: pid_t) -> Bool {
         guard let app = NSRunningApplication(processIdentifier: ownerPID) else {
             DWLog("Cannot find running application to quit for pid \(ownerPID)")

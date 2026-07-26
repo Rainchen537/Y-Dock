@@ -2,6 +2,12 @@
 
 All notable Y-Dock release changes are tracked here.
 
+## v1.2.0 - 2026-07-27
+
+- Added a choice for the yellow control on Dock preview cards: minimize only the selected window, or hide the window's entire application.
+- Preserved the existing minimize behavior as the default and updated the card tooltip to match the selected action.
+- Added persistent-setting coverage for the new choice, including safe fallback to minimize when a stored value is invalid.
+
 ## v1.1.25 - 2026-07-26
 
 - Removed the desktop-window traffic-light enhancement experiment, including all transparent overlay panels, red/yellow/green actions, hover reveal and enlargement, and red-button quit policies.

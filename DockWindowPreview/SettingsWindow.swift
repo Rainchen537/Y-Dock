@@ -71,6 +71,7 @@ private final class SettingsContentController {
     private let hoverDelayValuePill = YSettingPill(text: "100 ms", tone: .accent)
     private let thumbnailSlider = NSSlider(value: 165, minValue: 100, maxValue: 260, target: nil, action: nil)
     private let thumbnailValuePill = YSettingPill(text: "165 px", tone: .neutral)
+    private let previewMinimizeActionPopUp = NSPopUpButton(frame: .zero, pullsDown: false)
     private let dockClickMinimizeModePopUp = NSPopUpButton(frame: .zero, pullsDown: false)
     private let launchAtLoginStatusPill = YSettingPill(text: "未开启", tone: .neutral)
     private let updateStatusPill = YSettingPill(text: "", tone: .neutral)
@@ -190,7 +191,8 @@ private final class SettingsContentController {
                 YSettingUI.sliderRow(title: "悬停延迟", slider: hoverDelaySlider, valueView: hoverDelayValuePill),
                 YSettingUI.sliderRow(title: "缩略图高度", slider: thumbnailSlider, valueView: thumbnailValuePill),
                 YSettingUI.divider(),
-                YSettingUI.row(title: "显示窗口标题", trailingView: showTitleSwitch)
+                YSettingUI.row(title: "显示窗口标题", trailingView: showTitleSwitch),
+                YSettingUI.row(title: "缩略图黄色按钮", trailingView: previewMinimizeActionPopUp)
             ]
         ))
 
@@ -358,6 +360,12 @@ private final class SettingsContentController {
         thumbnailSlider.isContinuous = true
 
         configureModePopUp(
+            previewMinimizeActionPopUp,
+            values: PreviewMinimizeAction.allCases.map { ($0.displayName, $0.rawValue) },
+            action: #selector(previewMinimizeActionChanged(_:))
+        )
+
+        configureModePopUp(
             dockClickMinimizeModePopUp,
             values: DockClickMinimizeMode.allCases.map { ($0.displayName, $0.rawValue) },
             action: #selector(dockClickMinimizeModeChanged(_:))
@@ -373,6 +381,7 @@ private final class SettingsContentController {
         thumbnailValuePill.setText(String(format: "%.0f px", settings.thumbnailHeight), tone: .neutral)
 
         showTitleSwitch.state = settings.showWindowTitles ? .on : .off
+        selectMode(settings.previewMinimizeAction.rawValue, in: previewMinimizeActionPopUp)
         selectMode(settings.dockClickMinimizeMode.rawValue, in: dockClickMinimizeModePopUp)
         debugSwitch.state = settings.debugLoggingEnabled ? .on : .off
         refreshLaunchAtLoginStatus()
@@ -451,6 +460,19 @@ private final class SettingsContentController {
 
     @objc private func thumbnailSizeChanged(_ sender: NSSlider) {
         settings.thumbnailHeight = CGFloat(sender.doubleValue)
+        refreshValues()
+    }
+
+    @objc private func previewMinimizeActionChanged(_ sender: NSPopUpButton) {
+        guard
+            let rawValue = sender.selectedItem?.representedObject as? String,
+            let action = PreviewMinimizeAction(rawValue: rawValue)
+        else {
+            settings.previewMinimizeAction = .minimize
+            refreshValues()
+            return
+        }
+        settings.previewMinimizeAction = action
         refreshValues()
     }
 

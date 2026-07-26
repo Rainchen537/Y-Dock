@@ -849,6 +849,7 @@ private final class WindowPreviewCardView: NSView {
         controlStack.translatesAutoresizingMaskIntoConstraints = false
         controlStack.addArrangedSubview(quitButton)
         controlStack.addArrangedSubview(closeButton)
+        minimizeButton.toolTip = settings.previewMinimizeAction.toolTip
         controlStack.addArrangedSubview(minimizeButton)
         addSubview(controlStack)
 
