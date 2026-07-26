@@ -12,6 +12,10 @@
 - `AppSettings` 默认版本升级到 revision 3；升级时删除所有现行桌面红绿灯键及 v1.1.21/v1.1.22 遗留的 preview-control 策略键，防止废弃功能留下可重新激活的配置。
 - 更新资产选择、AppSettings 策略和 Monitoring 框架三组 standalone 测试均以 strict thin `arm64` / `x86_64` 编译运行通过；App 的 Debug/Release 四种架构组合均构建成功，版本为 `1.1.25 (50)` 且主可执行文件分别为目标单一架构，arm64 静态分析通过。
 - 功能设置页内建截图确认仅保留“Dock 悬浮预览”和“Dock 点击”两块设置，桌面红绿灯及红钮策略界面已完全消失；截图进程已主动结束。
+- 从干净 worktree 的源码提交 `c54183e` 执行 `release.sh` 成功。arm64 App/DMG 公证任务分别为 `267fd375-89fd-467b-b2d4-d74cde1354ed`、`e1dd0fe6-4499-496f-979e-b1090022076c`；x86_64 App/DMG 分别为 `7480726c-5f76-4bfd-ba91-1cd81c20b3a2`、`9dd9f815-4173-44fd-91bf-066a6d835bb6`，均为 Accepted。签名时间戳服务的两次瞬时失败由既有限次重试安全恢复，没有降低验证要求。
+- 最终 arm64 DMG 为 `1,686,481` bytes，SHA-256 `86057c7fc6fbc037a7a524d9b3b9a3997361843b830203d9e676f3e69b32533f`；x86_64 DMG 为 `1,715,772` bytes，SHA-256 `7b4652a1965105602e84eec544de8d463ca07a9b39b5352bc4cc8f9d64bba6c8`。两包均独立通过 Developer ID 签名、公证、staple、Gatekeeper、`hdiutil verify`、最终只读挂载与严格 thin 架构断言；x86_64 最终 App 还通过 Rosetta 启动存活冒烟并主动结束。
+- 从最终 arm64 DMG 以 candidate + backup 方式覆盖安装 `/Applications/Y-Dock.app`，确认正式安装版为 `1.1.25 (50)`、strict thin arm64，codesign、App ticket 与 Gatekeeper 均通过。运行日志确认底层仍只有一组 consolidated global/local NSEvent monitor，业务订阅为 `2 global / 3 local`；已废弃的桌面控制偏好键在升级后保持不存在。被替换的 `1.1.24` 测试副本已可恢复地移至废纸篓，既有 `1.1.23` 运行测试备份未改动。
+- tag `v1.1.25` 精确指向 `c54183e`，`master` 已推送；GitHub Release `https://github.com/Rainchen537/Y-Dock/releases/tag/v1.1.25` 已公开。latest-release API 确认恰好包含 arm64、x86_64 两份 DMG，首个资产为 arm64，远端顺序、bytes 与 SHA-256 digest 均匹配本地最终文件；后续发布记录提交不移动 tag。
 
 ## 2026-07-24
 

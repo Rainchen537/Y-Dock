@@ -4,7 +4,7 @@
 
 - 产品版本：`1.1.25`
 - 构建号：`50`
-- 状态：桌面窗口红绿灯覆盖功能已完整移除；待完成双架构构建与正式发布验证
+- 状态：已正式发布；桌面窗口红绿灯覆盖功能已完整移除
 - Y-Framework/Monitoring：`1.0.0`
 
 ## 版本规则
@@ -24,3 +24,7 @@
 - 保留 Dock 预览卡片控制、Dock 点击最小化和 `Option+Tab` 单窗口关闭入口。
 - 延续 Monitoring 1.0.0 的单组 AppKit global/local monitor，并保持 Esc 同步
   event tap 仅在 `Option+Tab` 会话期间启用。
+- arm64/x86_64 两份 strict thin DMG 已分别完成 Developer ID 签名、公证、
+  staple、Gatekeeper 与镜像验证；正式 arm64 安装版已覆盖安装并通过运行冒烟。
+- 发布源码提交与 tag：`c54183e` / `v1.1.25`。
+- GitHub Release：`https://github.com/Rainchen537/Y-Dock/releases/tag/v1.1.25`。

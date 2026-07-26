@@ -11,7 +11,24 @@
 - arm64/x86_64 Debug 与 Release 四种组合均构建通过，版本为 `1.1.25 (50)`，
   主可执行文件分别为目标单一架构；arm64 静态分析通过。
 - 功能设置页截图确认只剩 Dock 悬浮预览和 Dock 点击设置，截图测试进程已关闭。
-- 正式双架构签名、公证、DMG、发布和安装验证待完成。
+- 从干净源码提交 `c54183e` 完成双架构正式发布。arm64 App/DMG 公证 ID 为
+  `267fd375-89fd-467b-b2d4-d74cde1354ed` /
+  `e1dd0fe6-4499-496f-979e-b1090022076c`；x86_64 App/DMG 为
+  `7480726c-5f76-4bfd-ba91-1cd81c20b3a2` /
+  `9dd9f815-4173-44fd-91bf-066a6d835bb6`，全部 Accepted。
+- 最终 arm64 DMG 为 `1,686,481` bytes，SHA-256
+  `86057c7fc6fbc037a7a524d9b3b9a3997361843b830203d9e676f3e69b32533f`；
+  x86_64 DMG 为 `1,715,772` bytes，SHA-256
+  `7b4652a1965105602e84eec544de8d463ca07a9b39b5352bc4cc8f9d64bba6c8`。
+  两包均通过独立签名、公证、staple、Gatekeeper、镜像和 strict thin 架构验证，
+  x86_64 App 通过 Rosetta 短暂启动冒烟。
+- 从最终 arm64 DMG 覆盖安装 `/Applications/Y-Dock.app`，确认版本
+  `1.1.25 (50)`、thin arm64、签名、ticket 与 Gatekeeper 正常；运行日志确认
+  consolidated NSEvent monitor 为单组 global/local，业务订阅为
+  `2 global / 3 local`，废弃桌面控制偏好键未残留。
+- `v1.1.25` tag 保持指向功能源码提交 `c54183e`。GitHub Release 已公开：
+  `https://github.com/Rainchen537/Y-Dock/releases/tag/v1.1.25`；latest API
+  确认只有 arm64、x86_64 两份 DMG，arm64 在前，远端大小与摘要均匹配本地。
 
 ## 2026-07-24
 
