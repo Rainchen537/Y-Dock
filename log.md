@@ -13,7 +13,28 @@
   `1.3.0 (52)` strict thin 对应架构，arm64 静态分析通过。
 - 功能设置页截图确认 Dock 点击的“触发范围 / 执行动作”两行完整显示且无溢出，
   截图测试进程已关闭。
-- 当前版本准备递增为 `1.3.0 (52)`，待完成双架构构建、正式发布与本机安装闭环。
+- 从干净源码提交 `6606a4d` 完成正式双架构发布。arm64 App/DMG 公证 ID 为
+  `46dc34e9-ffcf-494e-b88a-4f51ff1fb4b9` /
+  `0e123ae5-8869-4ae1-8b12-5a5f7edcd9c3`；x86_64 App/DMG 为
+  `15cd438f-8fbe-4395-a968-b440a04e4ee5` /
+  `02ae001d-dc70-434b-b2a5-8415db4cbb5c`，全部 Accepted。
+- 最终 arm64 DMG 为 `1,689,350` bytes，SHA-256
+  `b92df15c82ba911be833a2159e4908037aed798cf549e36243bb160d01697f53`；
+  x86_64 DMG 为 `1,719,060` bytes，SHA-256
+  `f2a42c663a97236a012f24ffe64090ec5ea65fcbabbb4b2955a5e1dc06d70e03`。
+  两包均通过独立签名、公证、staple、Gatekeeper、镜像和 strict thin 架构验证；
+  x86_64 App 通过 Rosetta 设置页启动冒烟。
+- 从最终 arm64 DMG 覆盖安装 `/Applications/Y-Dock.app`，确认版本
+  `1.3.0 (52)`、thin arm64、签名、ticket 与 Gatekeeper 正常；旧
+  `1.2.0` App 已可恢复地移至
+  `/Users/lixingchen/.Trash/Y-Dock-v1.2.0-pre-v1.3.0.app`。
+- 临时单窗口 regular App 通过真实 Dock 点击验收：前台且窗口位于栈顶时选择
+  “所有 App / 隐藏”，点击后 Probe 进程继续运行但 `visible=false`，确认隐藏
+  动作生效；测试进程已退出，原 Y-Dock 偏好已完整恢复并重新启动正式安装版。
+- `v1.3.0` tag 保持指向功能源码提交 `6606a4d`。GitHub Release 已公开：
+  `https://github.com/Rainchen537/Y-Dock/releases/tag/v1.3.0`；latest API
+  与 GitHub App 均确认只有 arm64、x86_64 两份 DMG，arm64 在前，远端正文、
+  大小与摘要均匹配本地。
 - 将 Dock 悬浮缩略图卡片黄色按钮扩展为“最小化 / 隐藏”两种动作。
 - 新增持久化设置与功能页下拉选项，默认保留原有“最小化”；选择“隐藏”时使用公开
   `NSRunningApplication.hide()` 隐藏所属 App，并让按钮提示同步变化。

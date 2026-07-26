@@ -12,6 +12,11 @@
 - AppSettings standalone 测试新增 Dock 点击动作的默认值、隐藏选项持久化、展示名称和无效值安全回退覆盖，arm64/x86_64 均编译运行通过。
 - 资产选择、AppSettings 与 Monitoring 三组 standalone 测试均在 arm64/x86_64 通过；App 的 Debug/Release arm64/x86_64 四种组合均构建通过并确认为 `1.3.0 (52)` strict thin 对应架构，arm64 静态分析通过。
 - 功能设置页截图确认 Dock 点击 section 完整显示“触发范围 / 执行动作”两行，当前“所有 App / 最小化”值没有截断或溢出；截图进程已主动结束。
+- 从干净 worktree 的源码提交 `6606a4d` 执行 `release.sh` 成功。arm64 App/DMG 公证任务分别为 `46dc34e9-ffcf-494e-b88a-4f51ff1fb4b9`、`0e123ae5-8869-4ae1-8b12-5a5f7edcd9c3`；x86_64 App/DMG 分别为 `15cd438f-8fbe-4395-a968-b440a04e4ee5`、`02ae001d-dc70-434b-b2a5-8415db4cbb5c`，均为 Accepted。x86_64 DMG 签名时一次时间戳服务瞬时失败由既有限次重试安全恢复。
+- 最终 arm64 DMG 为 `1,689,350` bytes，SHA-256 `b92df15c82ba911be833a2159e4908037aed798cf549e36243bb160d01697f53`；x86_64 DMG 为 `1,719,060` bytes，SHA-256 `f2a42c663a97236a012f24ffe64090ec5ea65fcbabbb4b2955a5e1dc06d70e03`。两包均独立通过 Developer ID 签名、公证、staple、Gatekeeper、镜像挂载复核与严格 thin 架构断言；x86_64 最终 App 通过 Rosetta 启动并打开功能设置页后主动结束。
+- 从最终 arm64 DMG 以 candidate + backup 方式覆盖安装 `/Applications/Y-Dock.app`，确认正式安装版为 `1.3.0 (52)`、strict thin arm64，codesign、App ticket 与 Gatekeeper 均通过；被替换的 `1.2.0` 正式 App 已可恢复地移至废纸篓。
+- 使用临时单窗口 regular App 做真实 Dock 主按钮点击验收：目标在点击前保持前台并位于窗口栈顶，设置为“所有 App / 隐藏”后实际点击其 Dock 图标，Probe 进程继续存活但 System Events 报告 `frontmost=false / visible=false`，确认执行的是隐藏而非关闭或最小化。测试 Probe 已退出，Y-Dock 原偏好完整导回并重新启动正式安装版。
+- tag `v1.3.0` 精确指向功能源码提交 `6606a4d`，`master` 已推送；GitHub Release `https://github.com/Rainchen537/Y-Dock/releases/tag/v1.3.0` 已公开。latest-release API 与 GitHub App 双重确认仅包含 arm64、x86_64 两份 DMG，arm64 在前，正文、远端顺序、bytes 与 SHA-256 digest 均匹配本地最终文件；后续发布记录提交不移动 tag。
 - 准备发布 `v1.2.0 (51)`：Dock 悬浮缩略图卡片的黄色按钮新增“最小化 / 隐藏”二选一设置，默认继续保持原有“最小化”行为。
 - “最小化”继续只对当前缩略图对应窗口写入公开 AX `kAXMinimizedAttribute`；“隐藏”通过公开 `NSRunningApplication.hide()` 隐藏该窗口所属 App 的全部窗口，不依赖辅助功能权限。
 - 实测 `NSRunningApplication.hide()` 可能先返回 `false`、随后异步完成隐藏；动作路径不再把这个瞬时返回值误判成失败，而是在延迟后仅对仍未隐藏且仍在运行的 App 记录诊断。

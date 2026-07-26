@@ -4,7 +4,7 @@
 
 - 产品版本：`1.3.0`
 - 构建号：`52`
-- 状态：准备发布；Dock 点击支持“最小化 / 隐藏”
+- 状态：已正式发布；Dock 点击支持“最小化 / 隐藏”
 - Y-Framework/Monitoring：`1.0.0`
 
 ## 版本规则
@@ -21,6 +21,11 @@
 - Dock 主按钮点击新增独立“最小化 / 隐藏”动作设置，默认保持最小化。
 - 触发范围为关闭、仅单窗口 App、所有 App；关闭时动作控件同步禁用。
 - 隐藏动作使用公开 App 隐藏语义，原有前台与窗口栈顶安全条件保持不变。
+- arm64/x86_64 两份 strict thin DMG 已分别完成 Developer ID 签名、公证、
+  staple、Gatekeeper 与镜像验证；正式 arm64 安装版已覆盖安装并通过真实 Dock
+  点击隐藏验收。
+- 发布源码提交与 tag：`6606a4d` / `v1.3.0`。
+- GitHub Release：`https://github.com/Rainchen537/Y-Dock/releases/tag/v1.3.0`。
 
 ## v1.2.0 (51)
 
